@@ -55,8 +55,12 @@ deploy plane         every commit, scoped rights
 
 **Prerequisites, recorded rather than discovered later.** `service-stacks` needs a deployable stack,
 and today there is none: `infra/` is not generated (cut deliberately in the runway-cli prototype),
-and `SecureServiceAccount` and `SecureArtifactRepository` have no spec and no plan. Nothing in this
-repo has ever deployed; [open question 3](#open-questions) still gates any real `pulumi preview`.
+and `SecureServiceAccount` and `SecureArtifactRepository` have no spec and no plan — only
+`SecureContainerService` exists.
+
+What is *no longer* a prerequisite: [open question 3](#open-questions) is resolved, and the controls
+have been deployed to and torn down from real infrastructure. So `service-stacks` is blocked on
+missing components, not on the ability to verify anything against GCP.
 
 `runway-cli` is only worth shipping if the repo it emits actually deploys. Building
 `gcp-components` first makes "scaffold a repo, `pulumi preview` succeeds against real components"
