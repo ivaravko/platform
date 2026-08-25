@@ -11,9 +11,6 @@ const { JobPermission } = github.workflows;
  */
 
 const NODE_VERSION = "22.18.0";
-// The lockfile is npm 11 format. npm 10 rewrites it, so this is a floor in
-// practice even though Node 22.18 ships npm 10 -- see workflowBootstrapSteps.
-const NPM_VERSION = "11.16.0";
 const TYPESCRIPT_VERSION = "7.0.2";
 const VITEST = "vitest@4.1.11";
 // SPEC.md sets an 80% line-coverage floor per package, and three spec files
@@ -87,14 +84,6 @@ const root = new typescript.TypeScriptProject({
   depsUpgrade: false,
   workflowNodeVersion: NODE_VERSION,
   workflowPackageCache: true,
-  // Node 22.18 bundles npm 10, which does not understand the `libc` fields npm
-  // 11 writes into a lockfile — it strips them on install, the tree changes,
-  // and the mutation check fails the build. Pinning the npm that generated the
-  // lockfile is what makes CI reproducible; the Node version stays at the
-  // declared minimum so we still test against it.
-  workflowBootstrapSteps: [
-    { name: "Pin npm", run: `npm install -g npm@${NPM_VERSION}` },
-  ],
   buildWorkflowOptions: {
     // projen defaults to pull_request + workflow_dispatch. With release off,
     // nothing would then verify main after a merge.
@@ -110,6 +99,15 @@ const root = new typescript.TypeScriptProject({
     // deletes node_modules and takes the running projen with it. The workflow
     // already installs in its own step, so post-synthesis has nothing to add.
     env: { PROJEN_DISABLE_POST: "true" },
+    // Frozen-lockfile installs (`npm ci`), not `npm install`.
+    //
+    // Node 22.18 bundles npm 10, which strips the `libc` fields npm 11 writes
+    // into a lockfile. A mutable install therefore rewrote package-lock.json on
+    // every run and the mutation check failed the build. `npm ci` never writes
+    // the lockfile, so the npm version cannot cause drift — and a dependency
+    // committed without a matching lockfile now fails loudly instead of being
+    // silently rewritten. Self-mutation stays on for genuinely stale output.
+    mutableInstall: false,
   },
   // The root holds only repo-level invariant tests; there is no src/ to compile.
   // rootDir must widen to "." to match: projen defaults it to srcdir, which
