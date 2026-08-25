@@ -470,8 +470,8 @@ than no doc, because it reads as proof.
 ### ✅ Integration run — SPEC.md OQ3 resolved, C4 and C7 gaps closed
 
 Not a planned task. Ran to close the two criteria C4 and C7 could not meet offline, against
-**`enduring-badge-506610-u9`** (project number `741165637912`) — empty before and after, zero
-service accounts, no APIs enabled. **`preview` only — nothing was created, and a local file backend
+**`enduring-badge-506610-u9`** (project number `741165637912`) — no service accounts and no
+workloads, before or after. **`preview` only — nothing was created, and a local file backend
 was used so no state reached Pulumi Cloud.**
 
 An earlier pass used `project-4da1a7fd-3681-4524-853`, which turned out to hold live workloads;
@@ -499,7 +499,10 @@ every result below was re-established against the empty project and that one sho
   (`741165637912-compute@developer.gserviceaccount.com`). An earlier attempt used a project *id*,
   which is not the real format, and fell to the generic branch — still rejected. That is the design
   working: the hint list only shapes the message, the positive rule is the boundary.
-- `preview` needs no APIs enabled; `up` would need `run.googleapis.com` and is a separate decision.
+- **Correction:** I reported this project had none of the relevant APIs enabled. Wrong —
+  `run.googleapis.com` and `artifactregistry.googleapis.com` are enabled. The claim came from a
+  `grep` returning nothing, which cannot tell "no matches" from "the command failed". `preview`
+  needs no APIs regardless; `up` remains a separate decision, not an API-availability problem.
 
 ---
 

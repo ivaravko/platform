@@ -330,10 +330,17 @@ export class SecureContainerService extends pulumi.ComponentResource {
    `741165637912`) is the designated integration project. Nothing is created there: only
    `pulumi preview` is run, against a **local file backend**, so no state reaches Pulumi Cloud
    either. Confirmed empty before and after the run.
-   - **It is genuinely empty** — zero service accounts, none of the Cloud Run, Artifact Registry,
-     IAM or Binary Authorization APIs enabled. That is what makes it a usable sandbox.
-   - `preview` needs no APIs enabled. **`pulumi up` would need `run.googleapis.com` turned on**, and
-     is a separate decision that has not been taken.
+   - **No service accounts and no deployed workloads.** That is what makes it usable as a sandbox.
+   - **API state, corrected.** An earlier note here claimed none of the relevant APIs were enabled.
+     That was wrong: `run.googleapis.com`, `artifactregistry.googleapis.com` and
+     `serviceusage.googleapis.com` are **enabled**; `iam.googleapis.com`,
+     `cloudresourcemanager.googleapis.com` and `binaryauthorization.googleapis.com` are not. The
+     original claim came from a `grep` that returned nothing — which cannot distinguish "no matches"
+     from "the command failed", the same absence-versus-nothing-happened trap this repo's tests keep
+     catching. Enabled state is now read per-API by exact match.
+   - `preview` needs no APIs enabled at all. `pulumi up` is still a separate decision that has not
+     been taken; billing is active (`billingAccounts/01A131-8B0806-3C46A4`) and the account holds
+     `roles/owner`, so nothing blocks it technically.
    - `project-4da1a7fd-3681-4524-853` was briefly used first and should **not** be used again: it
      holds live workloads and service accounts (`piper-image-builder`, `app-image-builder`,
      `qwen2vl-image-builder`), so it is not a sandbox in any meaningful sense.
