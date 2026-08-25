@@ -190,7 +190,7 @@ control now doing the most work because the typed `SecureServiceAccount` guarant
 - A test asserts an *unlisted* future Google default is still rejected, proving the hint list is
   only cosmetic and the positive rule is the real boundary.
 
-### ⚠️ C4: SecureContainerService — private default path — DONE, one criterion unmet
+### ✅ C4: SecureContainerService — private default path — DONE (gap closed by integration run)
 The component itself, hardened defaults only. Carries **CR-01, CR-04, CR-05, CR-06, CR-07**.
 
 **Acceptance criteria**
@@ -356,7 +356,7 @@ Carries **CR-09**. Note the verified type has **no attestor field**: it is
 
 ## Phase C: Enforcement
 
-### ⚠️ C7: CrossGuard policy pack — DONE, one criterion partially met
+### ✅ C7: CrossGuard policy pack — DONE (gap closed by integration run)
 The layer that catches the bypass case: a consumer who declares a raw `gcp.*` resource and skips the
 component entirely. Built with `PolicyPack` + `validateResourceOfType`, `enforcementLevel: "mandatory"`.
 
@@ -466,6 +466,40 @@ than no doc, because it reads as proof.
 - **`lib` was under-declared as es2020 on a Node 22 repo.** `tsc` rejected `toSorted` and
   `replaceAll` — APIs that run fine and that oxlint actively asks for. Raised to es2023 across all
   three projects. Caught by the typecheck gate added in C6; vitest had been perfectly happy.
+
+### ✅ Integration run — SPEC.md OQ3 resolved, C4 and C7 gaps closed
+
+Not a planned task. Ran once `project-4da1a7fd-3681-4524-853` was designated for `pulumi preview`,
+to close the two criteria C4 and C7 could not meet offline. **`preview` only — nothing was created,
+and a local file backend was used so no state reached Pulumi Cloud.**
+
+- [x] **C4's failing-`Output` path** fails a real preview with the component's own message, verbatim
+      including the corrective action. Untestable under vitest; trivial here, because the engine
+      handles the rejection that vitest counts as a fatal unhandled error.
+- [x] **C7's stack-scoped CR-03 rule** works end to end. A compliant two-service stack passed with
+      zero violations; a four-resource raw stack failed with four mandatory violations
+      (`cr01-cr03`, `cr04`, `cr05`, `cr09`).
+- [x] **The OQ2 redesign is proven in reality:** the raw public service carried a forged
+      `runway-public: "true"` label and was rejected anyway. Under the original label-keyed rule it
+      would have passed silently.
+- [x] **`typescript: false` on the stack works** — six resources planned, no ts-node involved.
+
+**Findings**
+- **A claim written into SPEC.md during C2 was wrong, and is now corrected.** `typescript: false`
+  does *not* make policy packs runnable. The policy-pack runner hardcodes ts-node
+  (`cmd/run-policy-pack/index.js:110`) and never reads `PulumiPolicy.yaml`. **The pack cannot load
+  from anywhere inside this monorepo**, because TypeScript 7 resolves from the root; installed into
+  a tree without TypeScript it loads and enforces correctly. That makes distribution a correctness
+  constraint and it is now recorded in both specs.
+- The default-compute-SA hint fires correctly on the project's **real** identity
+  (`966948097214-compute@…`), and a real user-managed account is accepted. An earlier check used a
+  project *id* rather than a project *number*, which is not the real format — the positive rule
+  rejected it anyway, on the generic branch. Exactly the intended design: the hint list is cosmetic,
+  the positive rule is the boundary.
+- The sandbox **is not empty** and its Cloud Run Admin API is **not enabled**. `preview` needs
+  neither; `up` would need both considered.
+
+---
 
 ### ✅ Checkpoint: Module v1 Complete
 - [x] All nine controls: default, unit test, mapping row — no gaps in any direction, enforced

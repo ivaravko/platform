@@ -80,12 +80,32 @@ peer elsewhere will now install silently instead of erroring. What replaces that
 pinning of every `@pulumi/*` version plus tests asserting those pins, so drift fails loudly.
 
 **And ts-node's breakage reaches further than projen.** Pulumi runs `.ts` programs through ts-node,
-which throws under TS 7 (`ts.sys` is undefined). Pulumi loads it only when
-`PULUMI_NODEJS_TYPESCRIPT === "true"` (`@pulumi/pulumi/cmd/run/run.js:234`), set from
-`runtime.options.typescript` in `Pulumi.yaml`. **Every stack and policy pack in this repo must
-therefore be precompiled and declare `typescript: false`** — otherwise `pulumi preview` cannot run
-at all. Verified: `tsc` 7 typechecks Pulumi components cleanly and vitest drives
-`pulumi.runtime.setMocks()` without issue, so only the ts-node path is affected.
+which throws under TS 7 (`ts.sys` is undefined). For a **stack program**, Pulumi loads ts-node only
+when `PULUMI_NODEJS_TYPESCRIPT === "true"` (`@pulumi/pulumi/cmd/run/run.js:234`), set from
+`runtime.options.typescript` in `Pulumi.yaml`. **Every stack must therefore be precompiled and
+declare `typescript: false`.** Confirmed by a real `pulumi preview` against the sandbox project: the
+stack planned six resources with no ts-node involved.
+
+> **Correction (found in the integration run, after this was first written).** An earlier version of
+> this paragraph extended that mitigation to policy packs. **It does not apply to them.** The
+> policy-pack runner is a different code path and hardcodes ts-node on:
+> `typeScript: !process.versions.bun` (`@pulumi/pulumi/cmd/run-policy-pack/index.js:110`). It never
+> reads `PulumiPolicy.yaml`'s runtime options, so `typescript: false` there is inert.
+>
+> What actually governs it is `typeScriptRequireStrings()` (`@pulumi/pulumi/tsutils.js`): Pulumi
+> falls back to its vendored `typescript@3.8.3` **only when `require("typescript")` throws**. TS 7
+> imports fine — it simply has no compiler API — so the fallback never fires, and the vendored
+> ts-node then dies on `ts.sys.readFile`.
+>
+> **Consequence, verified both ways:** a policy pack fails to load from anywhere inside this
+> monorepo, because TypeScript 7 is resolvable from the root. Installed into a tree where
+> `typescript` does **not** resolve, the same pack loads and runs correctly — it passed a compliant
+> stack with zero violations and failed a non-compliant one with four mandatory violations. **How
+> the pack is distributed and consumed is therefore a correctness constraint, not packaging
+> detail.** See [SPEC-secure-container-service.md](SPEC-secure-container-service.md#hardening-controls).
+
+Verified alongside: `tsc` 7 typechecks Pulumi components cleanly and vitest drives
+`pulumi.runtime.setMocks()` without issue, so only the ts-node paths are affected.
 
 **oxlint is the linter, and it sidesteps the problem entirely.** oxlint parses TypeScript with its
 own Rust parser (oxc) and has **zero runtime dependencies**, so it never touches the compiler API
@@ -306,9 +326,15 @@ export class SecureContainerService extends pulumi.ComponentResource {
    into Storage/Cloud SQL where CIS actually bites.
 2. **Package registry and scope.** `@runway/*` is a placeholder. npm public, GitHub Packages, or
    Artifact Registry npm? This changes CI publish config and the generated repo's `.npmrc`.
-3. **Integration test target.** `gcloud` is authenticated as `ihar@perfinium.tech` with project
-   `project-4da1a7fd-3681-4524-853`. Is that a disposable sandbox I may `pulumi preview` against?
-   I will not touch it until told.
+3. ~~**Integration test target.**~~ **RESOLVED — `project-4da1a7fd-3681-4524-853` is designated
+   for `pulumi preview`.** Used for the integration run that closed the C4 and C7 gaps. Nothing was
+   created: only `pulumi preview` was run, against a **local file backend**, so no state reached
+   Pulumi Cloud either. Two things worth recording about it:
+   - **It is not empty.** It holds existing service accounts (`piper-image-builder`,
+     `app-image-builder`, `qwen2vl-image-builder`) and other workloads. "Disposable sandbox" does
+     not describe it, so `pulumi up` there needs its own explicit decision — `preview` does not.
+   - **The Cloud Run Admin API is not enabled on it.** `preview` does not need it; `up` would fail
+     until it is turned on.
 4. **Binary Authorization.** `deletionProtection: true` is a safe default, but Binary Authorization
    requires an attestor and org-level setup. Default it on and require the attestor arg, or leave
    it opt-in for v1?

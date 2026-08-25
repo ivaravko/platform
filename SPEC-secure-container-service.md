@@ -256,6 +256,21 @@ place. **`runway-public` remains only a filtering convenience** — it is what m
 `gcloud` edit made between deployments. That needs a detective control (Cloud Asset Inventory,
 Security Command Center) and is out of v1 scope.
 
+**The pack must be consumed from a tree where `typescript` does not resolve — this is a correctness
+constraint, not packaging detail.** Pulumi's policy-pack runner hardcodes ts-node on
+(`cmd/run-policy-pack/index.js:110`) and ignores `PulumiPolicy.yaml`'s runtime options entirely, so
+`typescript: false` does nothing there. It falls back to a vendored `typescript@3.8.3` only when
+`require("typescript")` throws; TypeScript 7 imports fine but has no compiler API, so the fallback
+never fires and the pack dies on `ts.sys.readFile`. Verified both ways against a real preview: the
+pack fails to load from inside this monorepo, and loads and enforces correctly when installed into a
+tree without TypeScript. A consumer whose repo pins TypeScript 7 will hit the same wall.
+
+**Verified end to end** against `project-4da1a7fd-3681-4524-853`: a stack of two
+`SecureContainerService` instances planned six resources and passed with zero violations, and a
+stack of four raw `gcp.cloudrunv2.Service` resources failed `pulumi preview` with four mandatory
+violations — including a service carrying a forged `runway-public: "true"` label, which bought it
+nothing.
+
 ## Commands
 
 Run from the repo root after the `packages/*` restructure.
