@@ -86,6 +86,41 @@ whose project belongs to someone else. Adoption must therefore distinguish *"the
 exist"* from *"the project exists and you cannot see it"* — the second is what a collision looks
 like, and reporting it as "not found" would send someone hunting for the wrong problem.
 
+## The first deploy of an environment is two phases
+
+The stack creates the registry and the Cloud Run service in one program, so a brand-new environment
+has an ordering problem: `pulumi up` creates the registry, then asks Cloud Run to pull an image that
+nothing has pushed — and nothing could have pushed it, because the registry did not exist until a
+moment ago.
+
+The resolution is an explicit two-phase first apply:
+
+```bash
+pulumi up --target '**SecureArtifactRepository**' --target-dependents   # registry only
+# build and push the image
+pulumi up                                                              # everything else
+```
+
+**Only the first apply per environment.** Every subsequent deploy is a single `pulumi up`, because
+the registry already exists.
+
+**This carries the risk that killed the state-migration option in
+[`environment-provisioning`](SPEC-environment-provisioning.md#the-bootstrap-paradox-and-its-answer),
+and it is worth naming rather than hoping.** A step that runs once per environment is the
+least-exercised path there is, and it will be reached for on the day someone is setting up
+production under time pressure. Two things follow:
+
+- It must be a **task in the generated repo**, not a sequence someone retypes from a README.
+  `npm run deploy:bootstrap` can be wrong once and fixed; a documented ritual is wrong every time
+  somebody skips a line.
+- The integration tier should exercise it at least once, so "the first deploy works" is a claim with
+  evidence behind it rather than a paragraph.
+
+The alternative designs were considered and declined: moving the registry into
+`environment-provisioning` would remove the ordering problem entirely but relocate a component
+across modules, and a placeholder public image would ship a scaffold whose default container is not
+the team's own.
+
 ## Promotion is a digest, not a rebuild
 
 Production deploys the exact artifact staging ran, referenced by digest — a tag can be repointed,

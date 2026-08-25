@@ -162,9 +162,14 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 
 ## Open Questions
 
-1. **What publishes the image?** The blocker above. Most likely a `Dockerfile` plus a build-and-push
-   job in `build.yml`, both additions to `runway-cli`'s scaffold output and therefore ask-first.
-   Until it exists, this module has nothing to promote.
+1. **What publishes the image?** Still open, and still the blocker. A `Dockerfile` plus a
+   build-and-push job in `build.yml`, both additions to `runway-cli`'s scaffold output and therefore
+   ask-first. The Dockerfile now has two build steps to run — `vite build` for the client and `tsc`
+   for the server — since the generated service became a SPA.
+
+   **The ordering half of this question is resolved:** a new environment's first apply is two-phase,
+   registry first, then push, then the rest. See
+   [service-stacks](SPEC-service-stacks.md#the-first-deploy-of-an-environment-is-two-phases).
 2. **Does production roll back, and how?** Re-tagging an older commit would redeploy an older digest,
    which works but conflates "roll back" with "release again". An explicit path may be worth having,
    or may be ceremony over `pulumi stack history`.
