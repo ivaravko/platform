@@ -30,26 +30,22 @@ CLI, not from a lint rule, and not from a code review.
 
 Everything a service needs that is created **once** and then sits still:
 
-| Resource | Why here and not in the deploy stack |
-|----------|---------------------------------------|
+| Resource | Why here |
+|----------|----------|
 | The two projects' IAM | The boundary is the point of the module |
 | Workload Identity pool and provider | Created with production, per service |
 | State buckets, per environment | EP-05; the deploy stack cannot own the bucket its own state lives in |
-| **Runtime service account**, per environment | An identity, created once. `SecureContainerService` takes its *email*, so the deploy stack never needs to create it |
-| **Artifact registry** | Created once, pushed to many times. Its lifetime is the service's, not the revision's |
+| The CI deployer service account | The identity production grants and localhost does not |
 
-The last two moved here from `service-stacks` deliberately — see
-[SPEC-runway-cli.md](SPEC-runway-cli.md#scaffold-output). A Cloud Run service changes on every
-deploy; an identity and a registry do not. Keeping them in the stack a developer redeploys all day
-means re-planning two resources that never move, and makes the generated repo responsible for
-infrastructure it does not own.
+**Not here: the service's runtime identity or its artifact registry.** Those are the deploy stack's,
+because `SecureContainerService` takes `serviceAccount: SecureServiceAccount` — a component
+reference rather than an email — so the stack must construct one. Both were briefly moved into this
+module on a lifecycle argument; the typed argument makes that impossible, and the type is load
+bearing: it is what puts the default compute service account out of reach.
 
-**They may be built with raw `gcp.*` here.** The no-raw-resources rule in
-[SPEC-runway-cli.md](SPEC-runway-cli.md#boundaries) governs the *generated* `infra/index.ts`, which
-is code a team reads and copies. This module is platform-owned and read by nobody outside it. When
-`SecureServiceAccount` and `SecureArtifactRepository` are eventually built they should be adopted
-here — but their absence no longer blocks anything, which is the point of the move. Until then the
-CrossGuard policy pack is what stops a service account key being created.
+Note the distinction that survives: this module provisions the **CI deployer** service account, the
+one that crosses the production boundary. The service's **runtime** identity is a different account
+with a different job, and it belongs with the service.
 
 ### Why this is a module and not a step
 
@@ -425,19 +421,17 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 8. Bootstrap **fails with an actionable message** if the org bootstrap-state bucket does not exist,
    printing the `gcloud storage buckets create` command that fixes it. It does not create the bucket
    itself — that is the one resource this module deliberately does not manage.
-9. Each environment gets a runtime service account and an artifact registry, and `--print-config`
-   emits their identifiers in the form the generated stack consumes.
-10. EP-06 flags a production project granting a human `roles/editor` — proving the check matches
+9. EP-06 flags a production project granting a human `roles/editor` — proving the check matches
    permissions, not role names. A name-based check would pass this case while humans could deploy.
-11. The WIF pool and provider live in the service's own production project; no pool is shared
+10. The WIF pool and provider live in the service's own production project; no pool is shared
    between services, and re-bootstrapping over a soft-deleted pool fails with an actionable message
    rather than `ALREADY_EXISTS`.
-12. **Adopting a production project that already grants a human a deploy-capable role fails**, names
+11. **Adopting a production project that already grants a human a deploy-capable role fails**, names
     every offending binding, and changes nothing (EP-06).
-13. No GCP project is created or deleted by any code path in this module.
-14. Bootstrap **succeeds with `--staging-project` alone**, and reports the service as incomplete,
+12. No GCP project is created or deleted by any code path in this module.
+13. Bootstrap **succeeds with `--staging-project` alone**, and reports the service as incomplete,
     naming the controls not yet in force (EP-07).
-15. Adding `--production-project` later provisions production and leaves staging's IAM bindings and
+14. Adding `--production-project` later provisions production and leaves staging's IAM bindings and
     state bucket unchanged — verified by comparing before and after, not by inspection.
 
 ## Open Questions
