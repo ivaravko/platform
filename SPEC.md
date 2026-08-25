@@ -26,8 +26,8 @@ security document.
 |----------------------------|-----------------------------------------------------------------------|-----------------------------------|
 | `gcp-components`           | Pulumi `ComponentResource`s for GCP; secure-by-default, typed args     | —                                 |
 | `runway-cli`               | projen-based CLI scaffolding a minimal service repo (build, CI, infra) | `gcp-components`                  |
-| `environment-provisioning` | Adopts existing GCP projects as a service's environments: provisions the WIF pool, state bucket, and the IAM that grants CI production deploys and denies them to humans. Staging is required; production is added when the team is ready. | —              |
-| `service-stacks`           | Environment-aware `infra/` in the scaffold: `staging` and `production` Pulumi stacks composing gcp-components | `gcp-components`, `environment-provisioning` |
+| `environment-provisioning` | Adopts existing GCP projects as a service's environments: provisions the WIF pool, state buckets, runtime service account, artifact registry, and the IAM that grants CI production deploys and denies them to humans. Staging is required; production is added when the team is ready. | —              |
+| `service-stacks`           | Environment-aware `infra/` in the scaffold: `staging` and `production` Pulumi stacks declaring one `SecureContainerService`, with identity and image from config | `gcp-components`, `environment-provisioning` |
 | `release-path`             | `runway deploy --env staging` from localhost; production only from CI over WIF, promoting the digest staging verified | `service-stacks`, `runway-cli`    |
 
 **Build order:** `gcp-components` → `runway-cli` → `environment-provisioning` → `service-stacks` → `release-path`
@@ -46,21 +46,30 @@ localhost does not have. Splitting them would put half a contract in each spec.
 **Two planes, two actors.** The three modules above assume a separation the earlier map did not:
 
 ```
-provisioning plane   once per service, org-level rights
-  projects · WIF pool · state bucket · IAM denials
+provisioning plane   once per service, project-level IAM rights
+  projects · WIF pool · state buckets · IAM denials
+  runtime service account · artifact registry
         ↓ emits config the service repo consumes
 deploy plane         every commit, scoped rights
-  Cloud Run · image · revision
+  Cloud Run service · image · revision
 ```
 
-**Prerequisites, recorded rather than discovered later.** `service-stacks` needs a deployable stack,
-and today there is none: `infra/` is not generated (cut deliberately in the runway-cli prototype),
-and `SecureServiceAccount` and `SecureArtifactRepository` have no spec and no plan — only
-`SecureContainerService` exists.
+**The split is by lifecycle, not by layer.** Anything created once and then left alone belongs
+above; only what changes on a deploy belongs below. That is why the runtime service account and the
+artifact registry sit in the provisioning plane despite being "application" resources — an identity
+and a registry outlive every revision that uses them.
 
-What is *no longer* a prerequisite: [open question 3](#open-questions) is resolved, and the controls
-have been deployed to and torn down from real infrastructure. So `service-stacks` is blocked on
-missing components, not on the ability to verify anything against GCP.
+**One prerequisite remains, and it is smaller than it was.** `infra/` is still not generated — it
+was cut deliberately in the runway-cli prototype — so `service-stacks` has a file to write before it
+has a stack to deploy.
+
+Two things that *were* prerequisites no longer are. [Open question 3](#open-questions) is resolved
+and the controls have been deployed to and torn down from real infrastructure, so verification
+against GCP is available. And `service-stacks` no longer waits on `SecureServiceAccount` or
+`SecureArtifactRepository`: the runtime service account and artifact registry moved to
+`environment-provisioning`, leaving the generated stack composing only `SecureContainerService`,
+which exists. Those two components remain worth building — `environment-provisioning` should adopt
+them when they exist — but nothing is blocked on them.
 
 `runway-cli` is only worth shipping if the repo it emits actually deploys. Building
 `gcp-components` first makes "scaffold a repo, `pulumi preview` succeeds against real components"
