@@ -406,8 +406,15 @@ gcpComponents.addTask("policy:install", {
   // inside the monorepo where TypeScript 7 resolves -- silently undoing the
   // isolation this task exists to create. Measured: the symlinked form fails
   // with the same ts.sys.readFile error as no isolation at all.
+  // The `rm -rf` is load-bearing too. npm skips re-copying a package it
+  // already has at the same version, and this package's version never changes
+  // -- so re-running over an existing install silently keeps the OLD pack.
+  // Measured: a rebuilt pack with two new rules did not propagate, and the
+  // preview went green with those rules simply absent. That is the exact
+  // silent failure this whole task exists to prevent.
   exec:
-    `npm install --prefix ${POLICY_DIR} --no-audit --no-fund --legacy-peer-deps ` +
+    `rm -rf ${POLICY_DIR} && npm install --prefix ${POLICY_DIR} ` +
+    `--no-audit --no-fund --legacy-peer-deps ` +
     `--install-links . ${PULUMI} ${PULUMI_POLICY} ${PULUMI_GCP} ${POLICY_TYPESCRIPT}`,
 });
 

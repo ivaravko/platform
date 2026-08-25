@@ -23,7 +23,7 @@ service accounts against a named benchmark version, CR-04's source should be upd
 
 Every URL below returned HTTP 200 when this file was written.
 
-## Controls
+## Controls: `SecureContainerService`
 
 | Control | Requirement | Source | Enforced in | Tests | Policy rule |
 |---|---|---|---|---|---|
@@ -36,6 +36,19 @@ Every URL below returned HTTP 200 when this file was written.
 | CR-07 | Default URI resolution disabled when not public | [Cloud Run: restricting ingress](https://cloud.google.com/run/docs/securing/ingress) | `SecureContainerService` | `CR-07: …` | — |
 | CR-08 | The justification is recorded on the resource | [Cloud Run: managing access](https://cloud.google.com/run/docs/securing/managing-access) | `SecureContainerService` | `CR-08: …` | — |
 | CR-09 | Binary Authorization opt-in; breakglass never exposed | [Binary Authorization overview](https://cloud.google.com/binary-authorization/docs/overview), [using breakglass](https://cloud.google.com/binary-authorization/docs/using-breakglass) | `SecureContainerService` | `CR-09: …` | `cr09-binary-authorization-breakglass-forbidden` |
+
+## Controls: `SecureServiceAccount`
+
+| Control | Requirement | Source | Enforced in | Tests | Policy rule |
+|---|---|---|---|---|---|
+| SA-01 | User-managed keys are never created, and unreachable through the API | [IAM: service account best practices](https://cloud.google.com/iam/docs/best-practices-service-accounts), [Workload Identity Federation](https://cloud.google.com/iam/docs/workload-identity-federation) | `SecureServiceAccount` | `SA-01: …` | `sa01-no-user-managed-service-account-keys` |
+| SA-02 | No roles are granted by default | [IAM: using IAM securely](https://cloud.google.com/iam/docs/using-iam-securely) | `SecureServiceAccount` | `SA-02: …` | — |
+| SA-03 | Project-wide and administrative roles are rejected | [IAM: service account best practices](https://cloud.google.com/iam/docs/best-practices-service-accounts) | `assertGrantableRoles` | `SA-03: …` | `sa03-no-over-privileged-role-grants` |
+
+**The allowlist is empty and the denial set is the boundary.** No role is granted unless a caller
+names it, and each named role is checked against the denials — the two project-wide roles, and
+anything whose final segment ends in `admin`. There is no vetted list of permitted roles, because
+none has been vetted; claiming otherwise would grant confidence without cover.
 
 ## Reading the columns
 

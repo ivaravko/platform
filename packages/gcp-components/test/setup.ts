@@ -58,13 +58,39 @@ void pulumi.runtime.setMocks({
     // Provider-computed outputs the mock must stand in for: with only `inputs`,
     // anything the real provider derives (a Cloud Run service's uri) resolves to
     // undefined and assertions on it would pass for the wrong reason.
-    state:
-      args.type === "gcp:cloudrunv2/service:Service"
-        ? { ...args.inputs, uri: `https://${args.name}-mocked-ew.a.run.app` }
-        : args.inputs,
+    state: { ...args.inputs, ...computedOutputs(args) },
   }),
   call: (args: pulumi.runtime.MockCallArgs) => args.inputs,
 });
+
+/**
+ * Provider-computed outputs the mock must stand in for.
+ *
+ * With only `args.inputs`, anything the real provider derives resolves to
+ * `undefined` — and an assertion that such a field is absent would pass for the
+ * wrong reason. Each entry here mirrors the shape the GCP provider actually
+ * returns.
+ */
+const computedOutputs = (
+  args: pulumi.runtime.MockResourceArgs,
+): Record<string, unknown> => {
+  const inputs = args.inputs as Record<string, unknown>;
+  switch (args.type) {
+    case "gcp:cloudrunv2/service:Service":
+      return { uri: `https://${args.name}-mocked-ew.a.run.app` };
+    case "gcp:serviceaccount/account:Account": {
+      const email = `${String(inputs.accountId)}@${String(inputs.project)}.iam.gserviceaccount.com`;
+      return {
+        email,
+        member: `serviceAccount:${email}`,
+        name: `projects/${String(inputs.project)}/serviceAccounts/${email}`,
+        uniqueId: `${args.name}-unique-id`,
+      };
+    }
+    default:
+      return {};
+  }
+};
 
 /**
  * Resolves an Output to its value.

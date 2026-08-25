@@ -64,26 +64,26 @@ a new test asserting the mechanism
 - All four properties are asserted by test and **mutation-tested**: aligning the two TypeScript
   pins, dropping `--install-links`, and moving the install into `node_modules` each fail the suite.
 
-### D2: `SecureServiceAccount`
+### ✅ D2: `SecureServiceAccount` — DONE
 The second v1 component. Its absence is why C4 shipped a runtime check where the module spec
 promised a compile-time one.
 
 **Acceptance criteria**
-- [ ] Wraps `gcp.serviceaccount.Account`; exposes `.email` as `pulumi.Output<string>`
-- [ ] **`gcp.serviceaccount.Key` is unreachable through the public API** — no argument, no method,
+- [x] Wraps `gcp.serviceaccount.Account`; exposes `.email` as `pulumi.Output<string>`
+- [x] **`gcp.serviceaccount.Key` is unreachable through the public API** — no argument, no method,
       no escape hatch. Workload Identity only
-- [ ] Role validation rejects `roles/owner`, `roles/editor` and any `*Admin` role at construction,
+- [x] Role validation rejects `roles/owner`, `roles/editor` and any `*Admin` role at construction,
       with a message naming the corrective action
-- [ ] Exported from `src/index.ts`; consumers never deep-import
-- [ ] Control-mapping rows, named tests and policy rules land in the same commit
+- [x] Exported from `src/index.ts`; consumers never deep-import
+- [x] Control-mapping rows, named tests and policy rules land in the same commit
 
 **Verification**
-- [ ] Table-driven rejection over `roles/owner`, `roles/editor`, `roles/iam.serviceAccountAdmin`
+- [x] Table-driven rejection over `roles/owner`, `roles/editor`, `roles/iam.serviceAccountAdmin`
       and at least one non-obvious `*Admin`
-- [ ] A policy rule rejects a raw `gcp.serviceaccount.Key` anywhere in a stack, with a test proving
+- [x] A policy rule rejects a raw `gcp.serviceaccount.Key` anywhere in a stack, with a test proving
       it fires — the bypass case is the whole reason the rule exists
-- [ ] Mutation-tested: break each new negative test and confirm it fails
-- [ ] `npm test --workspace @runway/gcp-components -- -t "SA-"` passes
+- [x] Mutation-tested: break each new negative test and confirm it fails
+- [x] `npm test --workspace @runway/gcp-components -- -t "SA-"` passes
 
 **Dependencies:** D1 (ordering only — the policy rule should land on a runnable pack)
 **Files:** `packages/gcp-components/src/service-account/*`, `src/index.ts`,
@@ -91,6 +91,27 @@ promised a compile-time one.
 **Scope:** M
 
 ---
+
+**Findings worth carrying forward**
+- **D1's `policy:install` silently served a stale pack, and D2 is how that surfaced.** npm skips
+  re-copying a package it already has at the same version, and this package's version never changes.
+  The rebuilt pack carrying SA-01 and SA-03 never propagated — and the preview went **green**, which
+  is indistinguishable from those rules passing. Only counting the registered policies exposed it.
+  Fixed with `rm -rf` before install, asserted by test. This is the fourth silent-pass in this repo
+  and the first that would have shipped a guardrail claiming to enforce rules it had never loaded.
+- **The allowlist is empty and the denial set is the boundary**, per the decision. `roles/owner`,
+  `roles/editor`, and anything whose **final segment ends in** `admin`. Final-segment matching, not
+  substring: `roles/storage.admin` is administrative and a hypothetical `roles/cloudsql.admin.viewer`
+  is not — rejecting things that are fine is how a control gets switched off.
+- **`roles` is a plain array, not an `Input`** — deliberately, and it is the direct lesson from C4.
+  The roles a service may hold are decided when the code is written, not discovered at deploy time,
+  so validation stays synchronous and fully testable. C4's untestable path does not recur here.
+- The policy rule calls `assertGrantableRoles` rather than reimplementing it, and a test asserts the
+  rejection message originates there — two copies of one control would drift silently.
+- The C8 completeness test was generalised from `CR-\d{2}` to `[A-Z]{2}-\d{2}` with contiguity
+  checked per prefix, so a second component need not continue the first's numbering. Re-mutation-tested.
+- Verified live: a raw `serviceaccount.Key` and a raw `roles/editor` grant both fail a real
+  `pulumi preview`, and a compliant stack passes.
 
 ### D3: `SecureArtifactRepository`
 The third v1 component. Independent of D2 — disjoint files, safe to run in parallel.

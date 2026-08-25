@@ -142,6 +142,14 @@ describe("policy pack isolation", () => {
     expect(task).not.toMatch(/--prefix\s+node_modules/);
   });
 
+  it("clears the install directory first, or npm serves a stale pack", () => {
+    // npm skips re-copying a package it already has at the same version, and
+    // this package's version never changes. Measured: a rebuilt pack with two
+    // new rules did not propagate, and the preview went green with those rules
+    // absent -- indistinguishable from them passing.
+    expect(installTask()).toMatch(/rm -rf\s+\.runway-policy/);
+  });
+
   it("installs the pack's own Pulumi runtime, not the consumer's", () => {
     // Resolution starts from @pulumi/pulumi's location, so the runner must live
     // in the isolated tree too -- otherwise it resolves the consumer's compiler.

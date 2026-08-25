@@ -14,6 +14,10 @@ import {
   validateStackResourcesOfType,
 } from "@pulumi/policy/policy";
 import {
+  checkGrantedRole,
+  checkNoServiceAccountKey,
+} from "./service-account-rules";
+import {
   checkBinaryAuthorization,
   checkInvokerIamDisabled,
   checkPublicInvokerBindings,
@@ -66,6 +70,24 @@ export const resourcePolicies: ResourceValidationPolicy[] = [
     enforcementLevel: ENFORCEMENT,
     validateResource: validateResourceOfType(gcp.cloudrunv2.Service, (props, _args, report) => {
       checkBinaryAuthorization(props, report);
+    }),
+  },
+  {
+    name: "sa01-no-user-managed-service-account-keys",
+    description:
+      "A user-managed service-account key is a long-lived credential that leaves the project.",
+    enforcementLevel: ENFORCEMENT,
+    validateResource: validateResourceOfType(gcp.serviceaccount.Key, (_props, _args, report) => {
+      checkNoServiceAccountKey(report);
+    }),
+  },
+  {
+    name: "sa03-no-over-privileged-role-grants",
+    description:
+      "A raw IAM binding must not grant a project-wide or administrative role.",
+    enforcementLevel: ENFORCEMENT,
+    validateResource: validateResourceOfType(gcp.projects.IAMMember, (props, _args, report) => {
+      checkGrantedRole(props, report);
     }),
   },
 ];

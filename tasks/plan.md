@@ -112,7 +112,11 @@ Per task, on top of its own acceptance criteria:
 
 ## Open Questions
 
-1. **What is on the role allowlist?** ([SPEC-gcp-components.md](../SPEC-gcp-components.md#secureserviceaccount))
+1. ~~**What is on the role allowlist?**~~ **RESOLVED — start empty.** No roles are granted by
+   default; a caller passes `roles` explicitly and each is validated against the denial rules
+   (`roles/owner`, `roles/editor`, any `*Admin`). A positive allowlist nobody has vetted grants
+   confidence without cover — the same reason CR-04's hint list is cosmetic and the positive rule is
+   the boundary. Original question: ([SPEC-gcp-components.md](../SPEC-gcp-components.md#secureserviceaccount))
    says roles come from "an explicit vetted set" and that `roles/owner`, `roles/editor` and `*Admin`
    throw. The denials are clear; the allowances are not. Blocks D2's central control. My
    recommendation: start with an **empty** allowlist and an explicit `roles` argument validated

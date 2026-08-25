@@ -7,6 +7,11 @@
 
 export { TYPE_NAMESPACE } from "./type-namespace";
 export { assertUserManagedServiceAccount } from "./container-service/service-account-email";
+export { assertGrantableRoles } from "./service-account/role-allowlist";
+export {
+  SecureServiceAccount,
+  type SecureServiceAccountArgs,
+} from "./service-account/secure-service-account";
 export {
   SecureContainerService,
   type SecureContainerServiceArgs,
