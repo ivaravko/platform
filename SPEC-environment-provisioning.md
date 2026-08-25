@@ -339,9 +339,9 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 4. **How does a team remediate an EP-06 failure?** The module refuses and reports, which is right,
    but it leaves the operator holding a list of bindings and no guidance. A documented runbook is
    probably enough; a `--fix` flag would re-introduce exactly the silent removal EP-06 forbids.
-5. **Does production allow *any* human break-glass path?** EP-01 says no. Real incidents sometimes
-   say otherwise. If a break-glass role is wanted, it should be specified deliberately — time-boxed,
-   alerting, and audited — rather than appearing later as an exception nobody reviewed.
+5. ~~Does production allow *any* human break-glass path?~~ **Out of scope.** EP-01 stands as
+   written: no human principal holds a deploy role in production. Should an incident later require
+   one, it is a deliberate amendment to EP-01 with its own review — not a door this spec leaves ajar.
 6. **What does this module do about the existing prerequisite gap?** `service-stacks` needs
    `SecureServiceAccount` and `SecureArtifactRepository`, which have no spec. They are not this
    module's job, but nothing downstream ships without them.
