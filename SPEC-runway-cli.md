@@ -8,11 +8,23 @@ Shared toolchain, code style, and boundaries are inherited from [SPEC.md](SPEC.m
 A CLI that scaffolds a minimal, projen-managed git repository for a new GCP service — build, test,
 lint, CI, and a deployable hardened infra stack — so a team's first commit is already correct.
 
-**"Minimal" is a hard constraint, not a soft preference.** The generated repo contains the service
-skeleton and its infrastructure. It does not contain business logic, a sample REST API, a database
-layer, or a Dockerfile full of commented-out options. Every generated line is a line someone must
-read, and a scaffold that generates 2,000 lines gets deleted and hand-rolled. If a file is not
-needed to build, test, lint, or deploy, it is not generated.
+**"Minimal" is a hard constraint, not a soft preference — but the floor moved.** The generated
+service is a React single-page app served by a Node process: one component, one route, one health
+endpoint. It still contains no business logic, no sample REST API, no database layer and no
+Dockerfile full of commented-out options. Every generated line is a line someone must read, and a
+scaffold that generates 2,000 lines gets deleted and hand-rolled.
+
+What changed is what "the smallest thing that deploys" is *for*. A bare health endpoint proved the
+paved road and taught a team nothing about the shape their service would take; a SPA and its server
+demonstrate the arrangement most services here will actually have. That is worth roughly sixty
+generated lines, and [criterion 7](#success-criteria) is raised deliberately to pay for it rather
+than quietly stretched.
+
+**One container, not two.** The Node process serves the built client and the API from the same
+image, so the stack `infra/` already provisions is unchanged: one Cloud Run service, one artifact.
+Serving the SPA from a bucket behind a load balancer is the more conventional production shape and
+would need `gcp-components` that do not exist — a second deployable is a larger change than a
+different `src/`.
 
 **Why projen rather than a template repo or `degit`.** A template repo forks and freezes on day
 one. projen keeps generated config regenerable: platform ships a new project-type version, the
@@ -27,10 +39,17 @@ stays on the paved road instead of drifting off it in month two.
 <service-name>/
 ├─ .projenrc.ts              → Declares the RunwayServiceProject type; the only config to hand-edit
 ├─ .github/workflows/        → Generated CI: build, test, lint, pulumi preview on PR
+├─ index.html                → Vite entry for the client bundle
 ├─ src/
-│  └─ index.ts               → Minimal HTTP server, health endpoint only
+│  ├─ client/
+│  │  ├─ main.tsx            → Mounts the app; nothing else
+│  │  └─ App.tsx             → One component, one heading
+│  └─ server/
+│     └─ index.ts            → Serves the built client, plus /healthz
 ├─ test/
-│  └─ index.test.ts          → One passing test, so the suite is green from commit one
+│  ├─ App.test.tsx           → One passing component test
+│  └─ server.test.ts         → One passing server test
+├─ vite.config.ts            → Client build; shares its config with vitest
 ├─ infra/
 │  ├─ Pulumi.yaml
 │  ├─ tsconfig.json          → infra/ sits outside srcdir, so `compile` never sees it
@@ -92,6 +111,25 @@ runway doctor                                # Verify node/npm/pulumi/gcloud ver
 
 Distribution mechanism is [SPEC.md Open Question 5](SPEC.md#open-questions) — unresolved, and it
 changes the entry-point shape. Spec'd here as a standalone `bin` for now.
+
+## What the generated service depends on
+
+| Package | Why |
+|---------|-----|
+| `react`, `react-dom` | The client |
+| `vite` | Client bundle, and `vitest` already shares its config — no second build tool |
+| `@vitejs/plugin-react` | JSX transform |
+| `happy-dom` (or `jsdom`) | vitest needs a DOM to render a component into |
+
+Four runtime and dev additions to a repo that previously had none beyond vitest, which
+[SPEC.md](SPEC.md#boundaries) makes ask-first. They were asked for and agreed together with the SPA
+itself; adding a fifth is a fresh decision.
+
+**An unverified risk, recorded because this repo has been bitten twice already.** TypeScript 7 broke
+ts-node and made `typescript-eslint` uninstallable. Vite transpiles with esbuild and never loads the
+TypeScript compiler API, so it *should* be unaffected — but "should" is what was said about the
+other two. **Verify `react` + `vite` + `@types/react` against TypeScript 7.0.2 before building any
+of this**, and if it fails, that is a decision to bring back, not a version to quietly pin down.
 
 ## Project Structure
 
@@ -165,7 +203,14 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific additions:
 4. Running `npx projen` twice in the generated repo produces zero diff on the second run.
 5. `runway new` into a non-empty directory fails with an actionable message and writes nothing.
 6. `runway doctor` reports missing or mis-versioned node/npm/pulumi/gcloud with a fix instruction.
-7. Total generated line count, excluding lockfiles and generated config, stays under 200 lines.
+7. Total generated line count, excluding lockfiles and generated config, stays under **300** lines.
+
+   **Raised from 200, deliberately.** The scaffold sat at 179 with a bare health endpoint; a React
+   client, its entry point, a bundler config and a component test cost roughly sixty more. Two
+   hundred was chosen because "a scaffold that generates 2,000 lines gets deleted and hand-rolled",
+   and that reasoning survives at 300 — what does not survive is treating the number as immovable
+   while adding to the scaffold. The cost of raising it is that the next addition will cite this
+   precedent, so the next raise should be argued at least this hard.
 
 ## Open Questions
 
@@ -178,6 +223,9 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific additions:
 3. **Generated CI provider** — GitHub Actions assumed. Confirm; projen supports GitLab CI too.
 4. **Does the scaffold `git init` and make an initial commit,** or leave that to the user?
    Recommendation: `git init` plus one commit, so `npx projen` regeneration has a clean baseline diff.
-5. **Runtime language of the generated *service*** — TypeScript assumed, matching the toolchain.
+5. ~~Runtime language of the generated *service*~~ — **Resolved: TypeScript, as a React SPA served
+   by a Node process.** See [Scaffold Output](#scaffold-output). A team wanting Python or Go now
+   needs a second project type rather than a language parameter, which is a larger change than the
+   original question anticipated.
    If teams deploy Python or Go services, the project type needs a language parameter and the
    minimal-scaffold constraint gets meaningfully harder.
