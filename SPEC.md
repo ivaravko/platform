@@ -416,12 +416,29 @@ export class SecureContainerService extends pulumi.ComponentResource {
    - **A developer needs GCP access to build the service at all**, not only to deploy it. On npmjs a
      new contributor could `npm install` before ever touching GCP.
 
-   Still to settle before anything publishes: which project hosts the repository, and who creates
-   it — this module creates no GCP resources today.
+   **Created (2026-08-25):** `europe-west1` / `enduring-badge-506610-u9` / `runway`, so the registry
+   URL is:
+
+   ```
+   https://europe-west1-npm.pkg.dev/enduring-badge-506610-u9/runway/
+   ```
+
+   See [open question 3](#open-questions) for why that project, and what it costs.
 3. ~~**Integration test target.**~~ **RESOLVED — `enduring-badge-506610-u9`** (project number
-   `741165637912`) is the designated integration project. Nothing is created there: only
-   `pulumi preview` is run, against a **local file backend**, so no state reaches Pulumi Cloud
+   `741165637912`) is the designated integration project. Integration runs create nothing there:
+   only `pulumi preview` is run, against a **local file backend**, so no state reaches Pulumi Cloud
    either. Confirmed empty before and after the run.
+
+   **One durable exception, added deliberately (2026-08-25): the `runway` Artifact Registry npm
+   repository** at `europe-west1`, holding the `@runway/*` packages. This project was chosen for it
+   over the alternatives, and the trade is worth stating rather than burying: the invariant here was
+   "nothing is created", and a package registry is durable platform infrastructure rather than a
+   test artifact. A sandbox is the project someone feels free to reset, and the registry URL is
+   embedded in every generated repo's `.npmrc` — so a reset would break consumers, not just tests.
+
+   The integration tier's emptiness checks cover Cloud Run services and fixture service accounts,
+   so they are unaffected. **If this project is ever wiped, the registry must be recreated at the
+   same path or every generated repo stops installing.**
    - **No service accounts and no deployed workloads.** That is what makes it usable as a sandbox.
    - **API state, corrected.** An earlier note here claimed none of the relevant APIs were enabled.
      That was wrong: `run.googleapis.com`, `artifactregistry.googleapis.com` and
