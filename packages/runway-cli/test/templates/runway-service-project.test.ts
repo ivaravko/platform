@@ -231,6 +231,16 @@ describe("build-out", () => {
 describe("infra program", () => {
   const infra = (): string => read("infra/index.ts");
 
+  it("requires the region rather than defaulting it", () => {
+    // SPEC-runway-cli forbids baking a region default into generated source,
+    // and the default is the worse failure: an unset region deploys silently to
+    // Belgium instead of stopping. require() turns a wrong answer into a
+    // missing one. gcp:project is already required, so this costs no working
+    // configuration -- a fresh scaffold could never preview without config.
+    expect(infra()).toContain('gcpConfig.require("region")');
+    expect(infra()).not.toMatch(/europe-west\d/);
+  });
+
   it("composes all three components", () => {
     for (const component of [
       "SecureArtifactRepository",

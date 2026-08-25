@@ -100,24 +100,26 @@ something no environment tested.
 | SS-05 | No project id, region, or credential appears as a literal in generated TypeScript |
 | SS-06 | Stack config carries `<service>-staging` / `<service>-production`, and `runway new` rejects a name that cannot produce a valid project id |
 
-## One correction this module owes
+## Corrections
 
 **SS-04 was already fixed.** An earlier draft of this spec listed the generated `Pulumi.yaml` as
 missing `runtime.options.typescript: false`. D6 had already added it, along with
 `main: lib/index.js` and a `compile:infra` task. Recorded here because the claim appeared in this
 spec and was wrong, not because anything remains to do.
 
-**SS-05 — a region default is baked into generated source.**
-[SPEC-runway-cli.md](SPEC-runway-cli.md#boundaries) says never to bake region defaults into
-generated source; they come from Pulumi config. The generated program currently reads:
+**SS-05 is fixed.** The generated program read
+`gcpConfig.get("region") ?? "europe-west1"`, which
+[SPEC-runway-cli.md](SPEC-runway-cli.md#boundaries) forbids — and the default was the worse failure,
+since an unset region deployed somewhere nobody chose rather than stopping. It now reads
+`gcpConfig.require("region")`.
 
-```ts
-const location = gcpConfig.get("region") ?? "europe-west1";
-```
+This cost no working configuration: `gcp:project` was already required, so a fresh scaffold could
+never preview without config anyway. The default was protecting nothing.
 
-A default is worse than a missing value here: an unset region silently deploys to Belgium instead of
-failing. `require("region")` turns a silent wrong answer into a loud missing one. The same applies
-to `imageTag`'s `?? "v1"`.
+**`imageTag`'s `?? "v1"` is deliberately left.** It is not a project id, region or credential, so the
+boundary does not reach it, and an unset tag fails visibly at deploy time with an image that does
+not exist rather than succeeding against the wrong thing. Worth revisiting alongside SS-02, where
+production must carry a digest rather than any tag at all.
 
 ## Commands
 
