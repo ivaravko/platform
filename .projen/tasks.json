@@ -78,10 +78,7 @@
       "description": "Only compile",
       "steps": [
         {
-          "execArgs": [
-            "tsc",
-            "--build"
-          ]
+          "exec": "npm run compile --workspaces --if-present"
         }
       ]
     },
@@ -147,24 +144,7 @@
     },
     "package": {
       "name": "package",
-      "description": "Creates the distribution package",
-      "steps": [
-        {
-          "execArgs": [
-            "mkdir",
-            "-p",
-            "dist/js"
-          ]
-        },
-        {
-          "execArgs": [
-            "npm",
-            "pack",
-            "--pack-destination",
-            "dist/js"
-          ]
-        }
-      ]
+      "description": "Creates the distribution package"
     },
     "post-compile": {
       "name": "post-compile",
@@ -183,7 +163,10 @@
       "description": "Run tests",
       "steps": [
         {
-          "exec": "vitest run"
+          "exec": "vitest run --dir test"
+        },
+        {
+          "exec": "npm run test --workspaces --if-present"
         },
         {
           "spawn": "lint"

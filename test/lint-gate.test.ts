@@ -28,9 +28,10 @@ const lintFixture = (
   filename: string,
   source: string,
   flags: readonly string[],
+  dir: string = fixtureDir,
 ): number => {
-  mkdirSync(fixtureDir, { recursive: true });
-  const file = join(fixtureDir, filename);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, filename);
   writeFileSync(file, source, "utf-8");
 
   const result = spawnSync(OXLINT, [...flags, file], {
@@ -63,8 +64,14 @@ export function go(): void {
 }
 `;
 
+const workspaceFixtureDir = join(root, "packages", "runway-cli", ".tmp-scaffold", "lint-gate");
+
 afterAll(() => {
   rmSync(join(root, ".tmp-scaffold"), { recursive: true, force: true });
+  rmSync(join(root, "packages", "runway-cli", ".tmp-scaffold"), {
+    recursive: true,
+    force: true,
+  });
 });
 
 describe("lint gate", () => {
@@ -97,5 +104,31 @@ describe("lint gate", () => {
     // flag is no longer earning its cost.
     expect(lintFixture("floating.ts", FLOATING_PROMISE, ["--deny-warnings"]))
       .toBe(0);
+  });
+});
+
+describe("workspace coverage", () => {
+  // C1 claims one oxlint pass from the root covers every package. Nothing else
+  // proves it: the root suite and each package's suite would both stay green if
+  // root linting silently stopped descending into packages/.
+  it("catches a violation inside packages/ from a single root invocation", () => {
+    expect(
+      lintFixture(
+        "in-package.ts",
+        UNUSED_VARIABLE,
+        ["--type-aware", "--deny-warnings"],
+        workspaceFixtureDir,
+      ),
+    ).not.toBe(0);
+  });
+
+  it("applies the root .oxlintrc.json inside packages/ — oxlint walks up to find it", () => {
+    // no-explicit-any is enabled only by the root config, so catching it here
+    // proves config discovery crosses the package boundary. Without it, each
+    // package would silently lint against oxlint's defaults instead of ours.
+    const source = "export const identity = (x: any): any => x;\n";
+    expect(
+      lintFixture("any.ts", source, ["--deny-warnings"], workspaceFixtureDir),
+    ).not.toBe(0);
   });
 });

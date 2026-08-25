@@ -11,7 +11,7 @@
   "overrides": [
     {
       "files": [
-        "test/**/*.ts"
+        "**/test/**/*.ts"
       ],
       "rules": {
         "typescript/no-non-null-assertion": "off",
@@ -29,6 +29,7 @@
   ],
   "ignorePatterns": [
     "lib/",
-    "node_modules/"
+    "node_modules/",
+    "packages/*/lib/"
   ]
 }

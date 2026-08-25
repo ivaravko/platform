@@ -1,21 +1,22 @@
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * Task 1's acceptance criteria as executable checks.
+ * Repo-level toolchain invariants.
  *
- * The toolchain is the prototype's flagged risk: TypeScript 7 shipped days before
- * the projen version we pin, and projen silently falls back to yarn when the
- * package manager is left unset. Both failures are invisible until something
- * downstream breaks, so they are asserted here rather than eyeballed once.
+ * These assertions moved here from packages/runway-cli when the repo became an
+ * npm-workspaces monorepo (C1). They were never really about the CLI: the
+ * linter, its config, and the package manager are properties of the workspace
+ * root, and after the move the root is the only place they are true. What stays
+ * in the CLI package is what is genuinely per-package — its own compiler and
+ * test-runner pins, and its bin entry.
  */
 
 const root = join(__dirname, "..");
 
 interface PackageJson {
   readonly devDependencies: Record<string, string>;
-  readonly bin?: Record<string, string>;
 }
 
 interface TasksJson {
@@ -29,30 +30,9 @@ interface FilesJson {
 const read = (...segments: string[]): string =>
   readFileSync(join(root, ...segments), "utf-8");
 
-const packageJson = (): PackageJson =>
-  JSON.parse(read("package.json")) as PackageJson;
-
-const tasksJson = (): TasksJson =>
-  JSON.parse(read(".projen", "tasks.json")) as TasksJson;
-
-const filesJson = (): FilesJson =>
-  JSON.parse(read(".projen", "files.json")) as FilesJson;
-
-describe("toolchain", () => {
-  it("resolves TypeScript 7, not a silently-pinned 5.x", () => {
-    const { devDependencies } = packageJson();
-    expect(devDependencies.typescript).toBe("7.0.2");
-  });
-
-  it("resolves vitest 4.1.11 as the test runner", () => {
-    const { devDependencies } = packageJson();
-    expect(devDependencies.vitest).toBe("4.1.11");
-  });
-
-  it("declares a runway bin entry", () => {
-    expect(packageJson().bin).toHaveProperty("runway");
-  });
-});
+const packageJson = (): PackageJson => JSON.parse(read("package.json")) as PackageJson;
+const tasksJson = (): TasksJson => JSON.parse(read(".projen", "tasks.json")) as TasksJson;
+const filesJson = (): FilesJson => JSON.parse(read(".projen", "files.json")) as FilesJson;
 
 describe("linter", () => {
   const lintCommand = (task: string): string =>
@@ -86,8 +66,11 @@ describe("linter", () => {
     expect(existsSync(join(root, ".oxlintrc.json"))).toBe(true);
     // projen's usual "//" marker cannot be used here — oxlint rejects unknown
     // config fields — so ownership is asserted from projen's own file registry.
-    const managed = filesJson().files;
-    expect(managed).toContain(".oxlintrc.json");
+    expect(filesJson().files).toContain(".oxlintrc.json");
+  });
+
+  it("keeps a single lint config at the root — oxlint discovers it by walking up", () => {
+    expect(existsSync(join(root, "packages", "runway-cli", ".oxlintrc.json"))).toBe(false);
   });
 });
 
@@ -96,10 +79,11 @@ describe("package manager", () => {
     expect(existsSync(join(root, "package-lock.json"))).toBe(true);
   });
 
-  it.each(["yarn.lock", "pnpm-lock.yaml"])(
-    "has no competing %s",
-    (lockfile) => {
-      expect(existsSync(join(root, lockfile))).toBe(false);
-    },
-  );
+  it.each(["yarn.lock", "pnpm-lock.yaml"])("has no competing %s", (lockfile) => {
+    expect(existsSync(join(root, lockfile))).toBe(false);
+  });
+
+  it("keeps exactly one lockfile — a nested one would silently defeat hoisting", () => {
+    expect(existsSync(join(root, "packages", "runway-cli", "package-lock.json"))).toBe(false);
+  });
 });

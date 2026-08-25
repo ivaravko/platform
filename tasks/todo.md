@@ -18,34 +18,63 @@ at the bottom. Component tasks use a `C` prefix so that plan's numbering stays v
 
 ## Phase A: Foundation
 
-### C1: Restructure to npm workspaces
+### ✅ C1: Restructure to npm workspaces — DONE
 Move `@runway/cli` from the repo root into `packages/runway-cli` and make the root a private
 workspace root. This task adds **no new package content** — its whole job is to prove the move is
 non-destructive before anything is built on top of it.
 
 **Acceptance criteria**
-- [ ] `.projenrc.ts` declares the root as a private `javascript.NodeProject` with subprojects via
-      `parent` + `outdir`; `@runway/cli` becomes `packages/runway-cli` with its config unchanged
-- [ ] The root `package.json` carries `workspaces: ["packages/*"]`, set through
+- [x] `.projenrc.ts` declares a private root with subprojects via `parent` + `outdir`;
+      `@runway/cli` becomes `packages/runway-cli` with its config unchanged.
+      **Correction: the root is a `typescript.TypeScriptProject`, not a `NodeProject`.**
+      `projenrcTs` is declared only on `TypeScriptProjectOptions`, and the standalone
+      `typescript.Projenrc` component takes a `TypeScriptProject` in its constructor — so a
+      `NodeProject` root would have meant hand-rolling the projenrc task and losing
+      `projenrc/tsconfig.json`. The root compiles nothing: `compileTask` and `packageTask` are
+      reset to fan out and to no-op respectively.
+- [x] The root `package.json` carries `workspaces: ["packages/*"]`, set through
       `package.addField` — projen ships `PnpmWorkspaceConfig` and no npm equivalent
-- [ ] Root `build`, `test`, and `lint` tasks fan out across workspaces
-- [ ] `oxlint` runs once from the root over both packages, still `--type-aware --deny-warnings`
+- [x] Root `build`, `test`, and `lint` tasks fan out across workspaces
+- [x] `oxlint` runs once from the root over both packages, still `--type-aware --deny-warnings`
 
 **Verification**
-- [ ] **The 15 existing runway-cli tests still pass, unmodified** — this is the acceptance test for
-      the whole task
-- [ ] `npm install && npx projen && npm run build && npm test && npm run lint` passes from a clean clone
-- [ ] `npx projen` twice produces zero diff on the second run
-- [ ] A test asserts the root `workspaces` array contains `packages/*` — projen does not maintain it,
+- [x] **The existing runway-cli tests still pass** — the acceptance test for the whole task.
+      **Criterion amended: "unmodified" was wrong.** Eight of the fifteen failed after the move,
+      all for one reason — they asserted *repo-level* facts (oxlint pins, `.oxlintrc.json`,
+      the package manager, the location of the oxlint binary) from inside a package where those
+      facts are no longer true. npm workspaces deliberately keeps one lockfile and one hoisted
+      `node_modules` at the root, so those assertions could only be made to pass by walking out
+      of the package they claimed to be testing. They were **relocated to the root**, not patched.
+      `packages/runway-cli/test/toolchain.test.ts` keeps only what is genuinely per-package: its
+      TypeScript pin, its vitest pin, and its bin entry. Count is now 25 root + 3 package = 28.
+- [x] `npm install && npx projen && npm run build && npm test && npm run lint` passes from a clean clone
+- [x] `npx projen` twice produces zero diff on the second run
+- [x] A test asserts the root `workspaces` array contains `packages/*` — projen does not maintain it,
       so an upgrade that silently drops it must fail loudly rather than degrade
-- [ ] No `yarn.lock` or `pnpm-lock.yaml` appears
+- [x] Tests assert there is **exactly one lockfile**: a nested `packages/*/package-lock.json` would
+      silently defeat hoisting. One appeared during the transition and is now asserted against
+- [x] Tests prove a **single root oxlint pass reaches into `packages/`** and applies the root
+      `.oxlintrc.json` there — verified empirically that oxlint discovers config by walking up,
+      so no `-c` flag is needed in subprojects
+- [x] No `yarn.lock` or `pnpm-lock.yaml` appears
 
 **Dependencies:** None
-**Files:** `.projenrc.ts`, `projenrc/`, `test/workspaces.test.ts` (new), + mechanical `git mv` of
-`src/`, `test/` into `packages/runway-cli/`
+**Files:** `.projenrc.ts`, `test/workspaces.test.ts` (new), `test/toolchain.test.ts` (repo-level,
+relocated), `test/lint-gate.test.ts` (extended with workspace coverage),
+`packages/runway-cli/test/toolchain.test.ts` (reduced to per-package), + `git mv` of `src/`
 **Scope:** M — the edits are few; the moves are mechanical
 
 ---
+
+**Findings worth carrying forward**
+- projen has **no npm-workspaces awareness whatsoever**: `NodePackage.postSynthesize` installs
+  per project with no parent guard (`node-package.js:609-626`), and the only parent-aware branch in
+  the file is for pnpm overrides. From a clean tree npm reconciles correctly, but the transition
+  produced a nested lockfile and nested `node_modules` before it settled.
+- The root's `rootDir` must be widened to `"."`. projen defaults it to `srcdir`, and with the root
+  holding only `test/`, `tsc --noEmit` failed TS6059 on its own test files.
+- oxlint discovers `.oxlintrc.json` by walking up from the working directory — verified with a rule
+  only the root config enables — so one config governs every package.
 
 ### C2: Add the gcp-components package and prove the Pulumi/TS 7 toolchain
 Create the second package and retire the plan's highest risk with a test rather than an assertion.
