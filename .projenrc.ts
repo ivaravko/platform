@@ -92,6 +92,13 @@ const root = new typescript.TypeScriptProject({
       push: { branches: ["main"] },
       workflowDispatch: {},
     },
+    // Without this the build job dies with MODULE_NOT_FOUND on projen's own
+    // CLI. `projen build` synthesises, and post-synthesis installs
+    // dependencies — per subproject, because projen has no npm-workspaces
+    // awareness (see C1's findings). In CI that install is `npm ci`, which
+    // deletes node_modules and takes the running projen with it. The workflow
+    // already installs in its own step, so post-synthesis has nothing to add.
+    env: { PROJEN_DISABLE_POST: "true" },
   },
   // The root holds only repo-level invariant tests; there is no src/ to compile.
   // rootDir must widen to "." to match: projen defaults it to srcdir, which
