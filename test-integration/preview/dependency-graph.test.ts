@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isolatedPolicyPack } from "../support/policy-pack";
+import { installedPolicyPack } from "../support/policy-pack";
 import { assertSandbox } from "../support/sandbox";
 import { withFixtureStack } from "../support/stack";
 
@@ -39,7 +39,7 @@ describe("CR-03: the stack-scoped rule against a real engine graph", () => {
         { fixture: "public-service", stackName: "cr03-justified" },
         async (stack) => {
           const result = await stack.preview({
-            policyPacks: [isolatedPolicyPack()],
+            policyPacks: [installedPolicyPack()],
           });
           return result.stdout;
         },
@@ -61,7 +61,7 @@ describe("CR-03: the stack-scoped rule against a real engine graph", () => {
         { fixture: "rogue-public", stackName: "cr03-rogue" },
         async (stack) => {
           try {
-            await stack.preview({ policyPacks: [isolatedPolicyPack()] });
+            await stack.preview({ policyPacks: [installedPolicyPack()] });
             return undefined;
           } catch (error) {
             return error instanceof Error ? error.message : String(error);

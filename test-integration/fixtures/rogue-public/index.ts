@@ -24,12 +24,25 @@ import * as pulumi from "@pulumi/pulumi";
 
 const config = new pulumi.Config();
 
+/**
+ * A plausible identity, never created.
+ *
+ * This fixture is preview-only: it exists to be rejected by the policy pack, so
+ * nothing is ever deployed and the account need not exist. Composing the email
+ * from the same config the real fixtures use keeps it shaped like the thing it
+ * is imitating — a rule that passed this stack only because the email looked
+ * wrong would be testing the wrong property.
+ */
+const serviceAccountEmail = `${config.require("accountId")}@${new pulumi.Config(
+  "gcp",
+).require("project")}.iam.gserviceaccount.com`;
+
 const service = new gcp.cloudrunv2.Service("rogue", {
   location: config.require("location"),
   ingress: "INGRESS_TRAFFIC_ALL",
   description: "A service someone shipped in a hurry.",
   template: {
-    serviceAccount: config.require("serviceAccountEmail"),
+    serviceAccount: serviceAccountEmail,
     containers: [{ image: config.require("image") }],
   },
 });

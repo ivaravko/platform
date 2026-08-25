@@ -60,10 +60,12 @@ describe("provider contract: the private path plans against real GCP", () => {
   });
 
   it("plans creates and nothing else", () => {
-    // A stack that plans an update or a delete is a stack with leftover state
+    // Five since D4: the component, its Cloud Run service, the service account
+    // the fixture now builds, and the resources those pull in. A stack that
+    // plans an update or a delete is a stack with leftover state
     // from a previous run — which would silently weaken every assertion below,
     // since an unchanged resource carries no inputs to check.
-    expect(summary.create).toBe(3);
+    expect(summary.create).toBe(5);
     expect(summary.update).toBeUndefined();
     expect(summary.delete).toBeUndefined();
   });

@@ -33,6 +33,7 @@ export interface IamPolicy {
 }
 
 const RUN_API = "https://run.googleapis.com/v2";
+const IAM_API = "https://iam.googleapis.com/v1";
 
 const servicePath = (name: string): string =>
   `projects/${SANDBOX_PROJECT_ID}/locations/${SANDBOX_REGION}/services/${name}`;
@@ -44,12 +45,12 @@ const servicePath = (name: string): string =>
  * `undefined` on failure — makes "the service is not public" and "the request
  * was rejected" the same answer, and the second must never read as the first.
  */
-const get = async (path: string): Promise<unknown> => {
+const get = async (path: string, base: string = RUN_API): Promise<unknown> => {
   assertSandbox();
 
   const client = await auth.getClient();
   const token = await client.getAccessToken();
-  const response = await fetch(`${RUN_API}/${path}`, {
+  const response = await fetch(`${base}/${path}`, {
     headers: { authorization: `Bearer ${token.token ?? ""}` },
   });
 
@@ -112,4 +113,26 @@ export const listServiceNames = async (): Promise<string[]> => {
     .filter((name): name is string => typeof name === "string")
     // The API returns fully-qualified paths; the short name is what a test names.
     .map((name) => name.slice(name.lastIndexOf("/") + 1));
+};
+
+/**
+ * Every service account in the sandbox, by email.
+ *
+ * A leaked identity is a different failure from a leaked service and needs its
+ * own read: fixtures build their own `SecureServiceAccount` since D4, and the
+ * Cloud Run listing cannot see one. It is also the quieter leak — an orphaned
+ * account costs nothing, so nothing else would ever surface it.
+ */
+export const listServiceAccountEmails = async (): Promise<string[]> => {
+  const path = `projects/${SANDBOX_PROJECT_ID}/serviceAccounts`;
+  const response = asObject(await get(path, IAM_API), path);
+  const accounts = Array.isArray(response.accounts) ? response.accounts : [];
+
+  return accounts
+    .map((account: unknown) =>
+      typeof account === "object" && account !== null && "email" in account
+        ? account.email
+        : undefined,
+    )
+    .filter((email): email is string => typeof email === "string");
 };

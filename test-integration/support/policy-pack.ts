@@ -1,126 +1,69 @@
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * Builds the CrossGuard pack somewhere Pulumi can actually load it.
+ * Locates the policy pack in the tree D1 built for running it.
  *
- * **The pack cannot run from inside this monorepo, and that is not a
- * configuration mistake.** The policy-pack runner is a different code path from
- * the stack runner: it hardcodes ts-node on (`typeScript: !process.versions.bun`)
- * and never reads `PulumiPolicy.yaml`'s runtime options, so the `typescript:
- * false` that saves stack programs is inert here. Pulumi falls back to its
- * vendored `typescript@3.8.3` only when `require("typescript")` *throws* —
- * and TypeScript 7 imports fine, it simply has no compiler API. The fallback
- * never fires, and the vendored ts-node dies on `ts.sys.readFile`.
+ * **This delegates to `policy:install` rather than staging its own tree.** An
+ * earlier version of this file built one under the OS temp dir on the theory
+ * that the pack needs somewhere `typescript` does not resolve. That theory was
+ * wrong, and wrong in a way that happened to work: it held only by accident of
+ * location. D1 measured the real constraint — **the nearest resolvable
+ * `typescript` must have a compiler API.** Pulumi's policy runner hardcodes
+ * ts-node on, resolves `typescript` from `@pulumi/pulumi`'s location, and falls
+ * back to its vendored 3.8.3 only when that `require` *throws*. TypeScript 7
+ * imports fine but exposes no compiler API, so the fallback never fires and
+ * ts-node dies on `ts.sys.readFile`.
  *
- * Verified both ways. From the repo: `TypeError: Cannot read properties of
- * undefined (reading 'readFile')` and `policy pack not started`. From a tree
- * where `typescript` does not resolve: `✅ runway-gcp@v0.0.1`.
+ * A tree with **no** TypeScript therefore fails inside a TS 7 repo, because
+ * resolution walks up and finds 7. `policy:install` installs `typescript@5.9.3`
+ * alongside the pack instead, with `--install-links` so npm copies rather than
+ * symlinks — a symlink resolves through the real path and lands back in the
+ * monorepo — and outside `node_modules/` so `npm ci` cannot wipe it.
  *
- * So the pack is staged outside the repo, with its own `node_modules` holding
- * the Pulumi packages and **deliberately not TypeScript**. Node resolves by
- * walking up from the requiring module, so a directory under the OS temp dir
- * cannot reach this repo's `node_modules`.
- *
- * See SPEC.md, "ts-node's breakage reaches further than projen".
+ * Those properties are asserted and mutation-tested in
+ * `packages/gcp-components/test/policy/pack.test.ts`. Re-deriving them here
+ * would mean two mechanisms to keep in step, and the quiet one would rot: a
+ * pack that fails to load is silent, and the stack simply goes unenforced.
  */
 
-const REPO_ROOT = join(__dirname, "..", "..");
-const COMPONENTS = join(REPO_ROOT, "packages", "gcp-components");
+const COMPONENTS = join(__dirname, "..", "..", "packages", "gcp-components");
+
+/** Where `policy:install` puts the runnable pack. */
+const PACK_DIR = join(
+  COMPONENTS,
+  ".runway-policy",
+  "node_modules",
+  "@runway",
+  "gcp-components",
+  "policy",
+);
 
 /**
- * Pinned to match the components' peer ranges.
+ * Absolute path to a loadable pack, installing it if it is not there yet.
  *
- * `@pulumi/gcp` is here because the rules import it for its types, and its
- * absence is not a load error — it is a `MODULE_NOT_FOUND` thrown from inside
- * the pack after the runner has already started, which reads as a pack bug
- * rather than a missing dependency.
+ * Reinstalled only when absent. The install is a full `npm install` of four
+ * packages and the pack is rebuilt from `lib/`, so a stale tree is possible
+ * after a component change — run `npm run policy:install --workspace
+ * @runway/gcp-components` to refresh it, which is what the CI workflow does
+ * unconditionally.
  */
-const PACK_DEPENDENCIES = [
-  "@pulumi/policy@1.21.0",
-  "@pulumi/pulumi@3.259.0",
-  "@pulumi/gcp@9.35.1",
-];
-
-/**
- * A marker recording what the staged tree was built from.
- *
- * Staging costs an `npm install` of three large packages, so the tree is reused
- * across runs — but only when the compiled pack and the pinned versions are
- * unchanged. Reusing a stale tree would test yesterday's rules and report them
- * as today's.
- */
-const stamp = (): string =>
-  JSON.stringify({
-    dependencies: PACK_DEPENDENCIES,
-    pack: readFileSync(join(COMPONENTS, "lib", "policy", "policies.js"), "utf-8")
-      .length,
-    rules: readFileSync(
-      join(COMPONENTS, "lib", "policy", "cloud-run-rules.js"),
-      "utf-8",
-    ).length,
-  });
-
-/** Absolute path to a loadable pack directory, staged on first use. */
-export const isolatedPolicyPack = (): string => {
-  const root = join(tmpdir(), "runway-integration-policy-pack");
-  const packDir = join(root, "policy");
-  const marker = join(root, ".stamp");
-  const current = stamp();
-
-  if (existsSync(marker) && readFileSync(marker, "utf-8") === current) {
-    return packDir;
-  }
-
-  mkdirSync(root, { recursive: true });
-  // `policy/index.js` requires `../lib/policy/pack`, so lib must stay a sibling.
-  cpSync(join(COMPONENTS, "policy"), packDir, { recursive: true });
-  cpSync(join(COMPONENTS, "lib"), join(root, "lib"), { recursive: true });
-
-  writeFileSync(
-    join(root, "package.json"),
-    `${JSON.stringify({ name: "runway-integration-policy-pack", private: true, version: "0.0.0" }, null, 2)}\n`,
-  );
-  // The same escape hatch the repo ships: @pulumi/pulumi's stale peer range on
-  // typescript would otherwise fail this install with ERESOLVE.
-  writeFileSync(join(root, ".npmrc"), "legacy-peer-deps=true\n");
-
-  execFileSync("npm", ["install", "--no-audit", "--no-fund", ...PACK_DEPENDENCIES], {
-    cwd: root,
-    stdio: "pipe",
-  });
-
-  assertTypeScriptUnreachable(root);
-
-  writeFileSync(marker, current);
-  return packDir;
-};
-
-/**
- * The invariant the whole arrangement rests on, checked rather than assumed.
- *
- * If `typescript` ever becomes resolvable from the staged tree — a transitive
- * dependency picks it up, npm hoists differently — the pack stops loading and
- * the failure is `ts.sys.readFile`, which points nowhere near the cause. Better
- * to fail here, naming it.
- */
-const assertTypeScriptUnreachable = (root: string): void => {
-  const result = execFileSync(
-    process.execPath,
-    [
-      "-e",
-      "try { require.resolve('typescript'); console.log('resolves') } catch { console.log('absent') }",
-    ],
-    { cwd: root, encoding: "utf-8" },
-  ).trim();
-
-  if (result !== "absent") {
-    throw new Error(
-      `The staged policy pack at ${root} can resolve "typescript". Pulumi will ` +
-        "then skip its vendored TypeScript fallback and the pack will fail to " +
-        "load with `ts.sys.readFile` undefined. See SPEC.md.",
+export const installedPolicyPack = (): string => {
+  if (!existsSync(join(PACK_DIR, "PulumiPolicy.yaml"))) {
+    execFileSync(
+      "npm",
+      ["run", "policy:install", "--workspace", "@runway/gcp-components"],
+      { cwd: join(__dirname, "..", ".."), stdio: "pipe" },
     );
   }
+
+  if (!existsSync(join(PACK_DIR, "PulumiPolicy.yaml"))) {
+    throw new Error(
+      `policy:install did not produce a pack at ${PACK_DIR}. Without it the ` +
+        "preview runs unenforced, which reports as a pass.",
+    );
+  }
+
+  return PACK_DIR;
 };

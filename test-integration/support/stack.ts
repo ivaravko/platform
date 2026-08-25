@@ -51,9 +51,6 @@ export interface FixtureStackOptions {
 
   /** Container image. Defaults to Google's always-available sample. */
   readonly image?: string;
-
-  /** Runtime identity. Must be user-managed — CR-04 rejects a default SA. */
-  readonly serviceAccountEmail?: string;
 }
 
 /**
@@ -62,7 +59,22 @@ export interface FixtureStackOptions {
  */
 const SAMPLE_IMAGE = "gcr.io/cloudrun/hello";
 
-const RUNTIME_SERVICE_ACCOUNT = `runway-api@${SANDBOX_PROJECT_ID}.iam.gserviceaccount.com`;
+/**
+ * A fresh service-account id per run, sharing one recognisable prefix.
+ *
+ * Fixtures build their own `SecureServiceAccount` since D4, so each run creates
+ * a real IAM identity and must remove it. Unique rather than stable because GCP
+ * reserves a deleted account's id for 30 days, and reusing one lands in
+ * resurrection semantics rather than a clean create.
+ *
+ * The shared prefix is what lets the emptiness check tell a leaked fixture
+ * identity from the sandbox's pre-existing accounts. Kept well inside GCP's
+ * 30-character limit.
+ */
+export const FIXTURE_ACCOUNT_PREFIX = "int-fx-";
+
+const fixtureAccountId = (): string =>
+  `${FIXTURE_ACCOUNT_PREFIX}${randomBytes(5).toString("hex")}`;
 
 /**
  * Runs `body` against a fixture stack that exists only for the call.
@@ -116,9 +128,7 @@ export const withFixtureStack = async <T>(
       "gcp:region": { value: SANDBOX_REGION },
       [`${project}:location`]: { value: SANDBOX_REGION },
       [`${project}:image`]: { value: options.image ?? SAMPLE_IMAGE },
-      [`${project}:serviceAccountEmail`]: {
-        value: options.serviceAccountEmail ?? RUNTIME_SERVICE_ACCOUNT,
-      },
+      [`${project}:accountId`]: { value: fixtureAccountId() },
     });
 
     return await body(stack);
