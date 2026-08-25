@@ -8,7 +8,7 @@ and `runway doctor` — is out of scope and unplanned. The full-scope plan is pa
 **Phase 2 adds generated GitHub Actions CI** (Tasks 4–5) — build, test, and lint only. See
 [Phase 2: Generated CI](#phase-2-generated-ci) below.
 
-Tasks: [tasks/todo.md](todo.md#deferred-runway-cli-prototype) — under "Deferred".
+Tasks: [tasks/todo.md](completed-v1.md#active-parallel-stream-runway-cli) — under "Deferred".
 
 **Deferred, not dropped.** The active plan is [tasks/plan.md](plan.md) (gcp-components).
 

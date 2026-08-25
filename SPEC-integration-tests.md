@@ -1,0 +1,333 @@
+# Spec: integration-tests
+
+The integration tier named in [SPEC.md](SPEC.md#testing-strategy) — the row that exists in the
+table and has never been built. Shared toolchain, code style, and boundaries are inherited from
+[SPEC.md](SPEC.md).
+
+Not a capability-map module. It ships no artifact and nothing depends on it; it is a test tier
+spanning both `gcp-components` and `runway-cli`, specified separately because it is the one tier
+that needs credentials, a project, and a CI decision that the other three do not.
+
+## Objective
+
+Prove that what the components *plan* is what GCP *accepts and enforces*.
+
+The PR gate already proves the plan is shaped correctly — `pulumi.runtime.setMocks()` unit tests,
+the CrossGuard policy pack, and `control-mapping.test.ts`. Every one of those runs against a
+fabricated engine. None has ever spoken to Google. That is the gap: a hardened default that GCP
+silently ignores, a provider field that does not survive the round trip, or an API that rejects our
+resource shape outright would pass the entire suite today.
+
+**Users:** platform engineers, who own the guardrails and need a regression in enforcement to fail
+loudly before a service team inherits it. Service developers never run this tier.
+
+**Success looks like:** a nightly run that fails when a hardening control stops being enforced by
+GCP — not when it stops being *emitted* by us, which is already covered.
+
+### The two gaps this closes, by name
+
+[docs/control-mapping.md](docs/control-mapping.md) already records both, under *Known gaps*:
+
+- **CR-03's stack-scoped policy rule is not exercised end to end offline.** It resolves an IAM
+  binding to its service through the engine's dependency graph, and `setMocks` supplies no such
+  graph. It is currently covered by hand-built dependency fixtures — a test of the fixture as much
+  as of the rule. A real `pulumi preview` builds a real graph.
+- **CR-06 guards the IaC path only.** `deletionProtection` is a provider-side field, not a GCP API
+  field: the v2 API returns `null` for a deployed service while Pulumi state records `true`. That
+  divergence was found against a real deployment, and only a real deployment can keep it from
+  regressing or from silently changing when the provider version moves.
+
+### Why not LocalStack, or any GCP emulator
+
+The request that produced this spec asked for LocalStack. Recording the finding here so it is not
+re-proposed:
+
+**LocalStack emulates AWS only** — it has no GCP support. The third-party equivalents
+([LocalGCP](https://github.com/slokam-ai/localgcp), MiniSky, LocalCloud) do emulate GCP, but not
+the part that matters here. LocalGCP's own documentation lists under *not included*:
+**"IAM/auth enforcement (all requests are accepted)"**, and its fourteen services include no IAM,
+no Artifact Registry, and no Binary Authorization.
+
+Set that against what this repo hardens — CR-01 through CR-09 are ingress, IAM bindings, service
+account identity, and Binary Authorization. Every control lands in the emulator's gap. An emulator
+that accepts all requests returns `200 OK` for a wide-open `allUsers` binding exactly as readily as
+for a locked-down one, so an emulator-backed suite is structurally incapable of failing on a
+security regression.
+
+SPEC.md's rule is that *a control without a test is not a control*. A green suite that cannot fail
+is worse than no suite, because it reads as proof. **No emulator is used in this tier.**
+
+## Target Project
+
+Resolved in [SPEC.md Open Question 3](SPEC.md#open-questions). Restated here because this spec is
+the thing that acts on it:
+
+| Fact | Value |
+|---|---|
+| Project id | `enduring-badge-506610-u9` |
+| Project number | `741165637912` |
+| Billing | active — `billingAccounts/01A131-8B0806-3C46A4` |
+| Backend | local file backend; no state reaches Pulumi Cloud |
+| Contents | no service accounts, no deployed workloads — this is what makes it a sandbox |
+
+`project-4da1a7fd-3681-4524-853` must **never** be used: it holds live workloads and service
+accounts (`piper-image-builder`, `app-image-builder`, `qwen2vl-image-builder`).
+
+**API enablement, as verified.** Read per-API by exact match, not by grep — the distinction between
+"no matches" and "the command failed" is one this repo's tests keep catching:
+
+| API | State | Needed by |
+|---|---|---|
+| `run.googleapis.com` | enabled | Tier A, Tier B |
+| `artifactregistry.googleapis.com` | enabled | Tier A, Tier B |
+| `serviceusage.googleapis.com` | enabled | both |
+| `iam.googleapis.com` | **not enabled** | Tier B only |
+| `cloudresourcemanager.googleapis.com` | **not enabled** | Tier B only |
+| `binaryauthorization.googleapis.com` | **not enabled** | Tier B only |
+
+`pulumi preview` needs no APIs enabled at all, so Tier A is unblocked today.
+
+## Scope: Two Tiers
+
+Tier B is the point of this spec, and Tier A is not merely a stepping stone to it — they fail on
+different things. Split because they carry different risk and different approval状態.
+
+### Tier A — `preview` against the sandbox
+
+Creates nothing. Runs `pulumi preview` against the real Google API with a real credential, and
+asserts on the resulting plan.
+
+**What only this tier can catch:**
+- The provider rejects our resource shape (a field removed or renamed across `@pulumi/gcp`
+  versions).
+- The engine's real dependency graph resolves differently from the hand-built fixtures — which is
+  precisely CR-03's known gap.
+- Our pinned provider version drifts from what the API now accepts.
+
+**What it cannot catch:** whether GCP *enforces* anything. A `preview` never asks Google to apply a
+policy. Ingress restriction, IAM binding rejection, and Binary Authorization all go unverified.
+
+**Status:** buildable now. Needs no new API enablement and no boundary change.
+
+### Tier B — `up`, assert against the live API, `destroy`
+
+Deploys a real service, reads the deployed state back through the GCP API rather than through
+Pulumi state, asserts the control holds, and destroys unconditionally.
+
+Reading back **through the API, not through Pulumi state**, is the whole design. Pulumi state
+records what we asked for; the API reports what GCP did. CR-06 is the proof that these differ, and
+a test that reads Pulumi state would have missed it.
+
+**Status: blocked on three decisions, none of which I should take unilaterally.** Listed in Open
+Questions below. Tier B does not get built until they are answered.
+
+## Commands
+
+```bash
+# Tier A — preview only, creates nothing
+npm run test:integration -- --project=preview
+
+# Tier B — deploys, asserts, destroys (gated; see Open Questions)
+npm run test:integration -- --project=deploy
+
+# Both, as CI runs them
+npm run test:integration
+
+# The PR gate, unchanged — must stay credential-free and offline
+npm run build
+```
+
+`test:integration` is a projen task added in `.projenrc.ts`, never a hand-edited `package.json`
+script. It is **not** spawned by `build`; wiring it into `build` would put credentials in the PR
+gate and violate a SPEC.md Always rule.
+
+Local runs need application-default credentials against the sandbox project:
+
+```bash
+gcloud auth application-default login
+gcloud config set project enduring-badge-506610-u9
+```
+
+## Project Structure
+
+```
+test/
+  ci.test.ts                     → existing: parses the emitted workflows
+  integration/
+    preview/
+      dependency-graph.test.ts   → CR-03 against a real engine graph
+      provider-contract.test.ts  → resource shapes the provider still accepts
+    deploy/
+      deletion-protection.test.ts → CR-06 provider-vs-API divergence
+      ingress.test.ts             → CR-01 enforced, not merely requested
+      invoker-binding.test.ts     → CR-03 enforced
+    fixtures/
+      stacks.ts                  → the stack programs under test
+    support/
+      sandbox.ts                 → project id, backend, guard rails
+      gcp-client.ts              → live API reads, distinct from Pulumi state
+vitest.integration.config.ts     → separate config; excluded from the default run
+```
+
+Integration tests live at the **repo root**, not inside a package: they compose `gcp-components`
+stacks *and* repos emitted by `runway-cli`, so they belong to neither.
+
+**One consequence that must be designed around.** `control-mapping.test.ts` walks
+`packages/gcp-components/test` and no further. A control whose only test lives in
+`test/integration/` will therefore fail the "a row without a test fails" check. **Integration tests
+supplement the mapping's unit tests; they never replace them.** Every `CR-0X` keeps its unit test
+inside `packages/gcp-components/test/`, and the mapping's `Tests` column keeps pointing there.
+
+## Code Style
+
+Inherits SPEC.md. Two conventions specific to this tier:
+
+```ts
+import { afterAll, describe, expect, it } from "vitest";
+import { assertSandbox, withStack } from "../support/sandbox";
+import { getService } from "../support/gcp-client";
+
+// Refuses to run anywhere but the designated sandbox. Placed at module scope so
+// a misconfigured GOOGLE_CLOUD_PROJECT fails before any resource is planned,
+// not midway through a deploy that then needs manual cleanup.
+assertSandbox();
+
+describe("CR-06: deletion protection survives the round trip", () => {
+  it("is recorded in Pulumi state but absent from the v2 API", async () => {
+    await withStack("cr06-deletion-protection", async (stack) => {
+      const outputs = await stack.up();
+      const deployed = await getService(outputs.serviceName);
+
+      // The divergence is the assertion, not an accident being tolerated.
+      // See docs/control-mapping.md "Known gaps" — if the API ever starts
+      // returning this field, CR-06's gap has closed and the mapping is stale.
+      expect(outputs.deletionProtection).toBe(true);
+      expect(deployed.deletionProtection).toBeNull();
+    });
+  });
+});
+```
+
+- **`withStack` destroys in a `finally`.** No test leaves a resource behind on assertion failure,
+  and the teardown result is asserted rather than ignored — a failed `destroy` fails the test.
+- **Test titles carry the control id** (`CR-06: …`), matching the existing convention, so a reader
+  grepping a control id finds every tier that covers it.
+
+## Testing Strategy
+
+Slots in as the fourth row of SPEC.md's table, which currently describes it in one line:
+
+| Level | Tool | Runs on | Gate |
+|---|---|---|---|
+| Unit | vitest + `setMocks()` | every PR | blocking |
+| Policy | vitest against the policy pack | every PR | blocking |
+| Generation | vitest — scaffold to temp dir, build it | every PR | blocking |
+| **Integration A** | `pulumi preview` on the sandbox | **nightly + pre-release** | **non-blocking on PR** |
+| **Integration B** | `pulumi up` → API read → `destroy` | **nightly + pre-release** | **non-blocking on PR** |
+
+- **Never in the PR gate.** SPEC.md: *"no test in the PR gate may touch GCP or need credentials"*
+  and *"keep the PR test gate credential-free and offline"*. Fork PRs cannot hold credentials
+  anyway, so a gating integration tier would make every external contribution red.
+- **Failure is a real signal, not noise.** A nightly tier that fails intermittently gets muted
+  within a month. Flakiness is treated as a defect in this suite, not a fact of cloud testing:
+  quota and propagation delays are retried explicitly with a bounded, logged backoff; nothing else
+  is.
+- **Coverage is not measured here.** The 80% line-coverage floor is a PR-gate metric. This tier is
+  measured by which controls it exercises, tracked in the mapping document.
+
+### Authentication
+
+**Workload Identity Federation, never a service account key.** SPEC.md's Never list forbids
+committing credentials, and `gcp-components` exists partly to make user-managed SA keys impossible
+to create. A JSON key in a GitHub secret to test that library would be self-refuting.
+
+CI authenticates via `google-github-actions/auth` with WIF; a local run uses application-default
+credentials. **No credential is ever written to the repo or to a projen-generated file.**
+
+### Cost and cleanup
+
+Tier A costs nothing. Tier B deploys a scale-to-zero Cloud Run service for the duration of one
+test — cents per night, and the sandbox has active billing. The workflow runs `destroy` in an
+`if: always()` step, and a final job asserts the project is empty, so a crashed run is caught by
+the next night's assertion rather than by a billing alert.
+
+## CI
+
+One workflow, `integration`, added in `.projenrc.ts` via `root.github.addWorkflow("integration")` —
+the same mechanism as the existing `security` workflow. It is **never hand-edited**, and
+`test/ci.test.ts` gets contract assertions for it alongside the existing ones: that it does not
+trigger on `pull_request`, that it pins the sandbox project id, and that teardown runs with
+`if: always()`.
+
+Triggers: nightly schedule, plus `workflow_dispatch`. Not on push to `main` — a merge should not
+deploy, and the nightly run catches the same regression within a day.
+
+## Boundaries
+
+Inherits SPEC.md. Additions and one amendment specific to this tier:
+
+**Always**
+- Run against `enduring-badge-506610-u9` and assert the project id before planning any resource.
+- Destroy in a `finally` and in an `if: always()` CI step; assert the teardown succeeded.
+- Read deployed state through the GCP API when asserting enforcement, never through Pulumi state.
+- Keep a unit test inside `packages/gcp-components/test/` for every control, whatever the
+  integration tier also covers.
+
+**Ask first**
+- Enabling any additional API on the sandbox project.
+- Adding a test that deploys anything beyond Cloud Run, Artifact Registry, and a service account.
+- Any increase in what Tier B leaves running between tests.
+
+**Never**
+- Run this tier against any project other than the designated sandbox.
+- Put an integration test in the PR gate, or let one block a pull request.
+- Use a service account key. WIF or application-default credentials only.
+- Weaken an assertion because a control behaves differently against real GCP than against mocks —
+  that divergence is the finding, and it belongs in the mapping's *Known gaps*.
+
+**Amends SPEC.md.** SPEC.md's Never list currently reads: *"Run `pulumi up` or `pulumi destroy`
+unattended, or against a project not designated as sandbox."* Tier B is unattended by construction
+— it is a nightly CI job. **This spec does not take that decision.** It is Open Question 1 below,
+and Tier B is not built until SPEC.md's boundary is amended in the same commit that builds it.
+
+## Success Criteria
+
+**Tier A**
+- [ ] `npm run test:integration -- --project=preview` runs green against the sandbox, creating nothing.
+- [ ] The sandbox is verifiably empty after the run, asserted by the suite rather than by eye.
+- [ ] CR-03's stack-scoped rule is proven against a real engine dependency graph, and
+      [docs/control-mapping.md](docs/control-mapping.md)'s *Known gaps* entry for it is deleted in
+      the same commit.
+- [ ] A deliberately bumped `@pulumi/gcp` minor that changes a resource shape fails this tier.
+- [ ] `test/ci.test.ts` asserts the workflow does not trigger on `pull_request`.
+
+**Tier B** (gated on Open Questions)
+- [ ] CR-01 verified as *enforced*: a service planned as internal-only is not reachable publicly.
+- [ ] CR-06's provider-vs-API divergence is asserted, so a provider change that closes it fails
+      the suite and forces the mapping to be updated.
+- [ ] A control deliberately weakened in a scratch branch turns this tier red. **Until this is
+      demonstrated once, the tier is not proven to work** — the entire objection to emulators is
+      that a suite which cannot fail reads as proof.
+- [ ] The project is empty after a run that fails mid-deploy, verified by killing a run on purpose.
+
+**Both**
+- [ ] `npm run build` remains credential-free and offline; total PR-gate runtime unchanged.
+- [ ] Nightly runs green for ten consecutive nights before the tier is called done.
+
+## Open Questions
+
+1. **`pulumi up` unattended — the blocking one.** SPEC.md forbids it and Tier B requires it.
+   SPEC.md OQ3 records that this decision *"has not been taken"*; billing is active and the account
+   holds `roles/owner`, so nothing blocks it technically. Amend the boundary to permit unattended
+   `up`/`destroy` **against the designated sandbox only**, or keep the prohibition and ship Tier A
+   alone? Tier A alone leaves every enforcement control unverified and closes only one of the two
+   named gaps.
+2. **Enabling three APIs on the sandbox.** Tier B needs `iam`, `cloudresourcemanager`, and
+   `binaryauthorization` enabled. Enabling them is cheap and reversible, but SPEC.md makes any
+   change to a real GCP project an Ask-first, and enabling `binaryauthorization` in particular
+   interacts with OQ4, which is still open.
+3. **WIF setup is a prerequisite I cannot complete alone.** The pool, provider, and repo binding
+   need someone with org-level access. Confirm who does it, or agree Tier A runs on
+   `workflow_dispatch` with a local credential until WIF exists.
+4. **Ten green nights is a guess.** It is a stand-in for "stable enough to trust". If pre-release
+   is the only moment this tier's verdict is acted on, a shorter bar is defensible.
