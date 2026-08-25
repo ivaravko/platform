@@ -276,6 +276,15 @@ Both services reached `Ready=True`, so the hardened defaults do not merely plan 
 | CR-07 default URI | **no URL assigned at all** | URL served, HTTP 200 |
 | CR-08 justification | no description, no label | description verbatim, `runway-public: true` |
 
+**CR-06 was also proven the other way: `pulumi destroy` refused.** The first teardown attempt
+failed with *"cannot destroy service without setting deletion_protection=false"*, both services
+survived, and removal required the justified opt-out
+(`deletionProtection: { disableJustification: … }`) followed by a re-apply — which is precisely the
+escape hatch's purpose. **One wrinkle worth knowing: the failed destroy was not a no-op.** It
+deleted the unprotected `ServiceIamMember` before failing on the services, leaving the public
+service still `ingress: all` but no longer invokable. A blocked teardown leaves partial state, so it
+is not safe to treat a failed `destroy` as "nothing happened".
+
 **CR-06 is weaker than its name suggests, and this is where that surfaced.** The GCP v2 API returns
 `deletionProtection: null` for both services while Pulumi state records `true`. It is a
 **provider-side field**, not a GCP one: it blocks `pulumi destroy` / `terraform destroy` and nothing
