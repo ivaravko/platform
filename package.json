@@ -11,11 +11,9 @@
     "lint:fix": "projen lint:fix",
     "package": "projen package",
     "post-compile": "projen post-compile",
-    "post-upgrade": "projen post-upgrade",
     "pre-compile": "projen pre-compile",
     "test": "projen test",
     "typecheck": "projen typecheck",
-    "upgrade": "projen upgrade",
     "watch": "projen watch",
     "projen": "projen"
   },
@@ -27,7 +25,8 @@
     "oxlint-tsgolint": "7.0.2001",
     "projen": "0.103.2",
     "typescript": "7.0.2",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "yaml": "^2.9.0"
   },
   "engines": {
     "node": ">= 22.18.0"

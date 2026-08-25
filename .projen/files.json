@@ -1,6 +1,8 @@
 {
   "files": [
     ".gitattributes",
+    ".github/workflows/build.yml",
+    ".github/workflows/security.yml",
     ".gitignore",
     ".npmignore",
     ".npmrc",

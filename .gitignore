@@ -29,6 +29,7 @@ jspm_packages/
 *.tgz
 .yarn-integrity
 .cache
+!/.github/workflows/build.yml
 !/test/
 !/tsconfig.json
 !/test/tsconfig.json
@@ -36,6 +37,7 @@ jspm_packages/
 /lib
 /dist/
 !/projenrc/tsconfig.json
+!/.github/workflows/security.yml
 !/.npmrc
 !/.oxlintrc.json
 dist/

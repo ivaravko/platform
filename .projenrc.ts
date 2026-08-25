@@ -1,4 +1,6 @@
-import { JsonFile, TextFile, javascript, typescript } from "projen";
+import { JsonFile, TextFile, github, javascript, typescript } from "projen";
+
+const { JobPermission } = github.workflows;
 
 /**
  * Single source of truth for all generated config. Never hand-edit a generated
@@ -61,7 +63,36 @@ const root = new typescript.TypeScriptProject({
   projenrcTs: true,
   // Node's own type stripping needs no compiler API, unlike ts-node.
   projenrcTsOptions: { runner: typescript.TypeScriptRunner.nodejs() },
-  devDeps: [VITEST, VITEST_COVERAGE, "oxlint@1.80.0", "oxlint-tsgolint@7.0.2001"],
+  // yaml is test-only: test/ci.test.ts parses the emitted workflows rather than
+  // string-matching them, so a malformed one fails here.
+  devDeps: [
+    VITEST,
+    VITEST_COVERAGE,
+    "oxlint@1.80.0",
+    "oxlint-tsgolint@7.0.2001",
+    "yaml@^2.9.0",
+  ],
+
+  // The platform's own CI. Only the root gets a workflow — `common` leaves
+  // github off, and subprojects would otherwise each emit their own.
+  //
+  // Same suppression the scaffold uses: left alone, projen also adds release,
+  // deps-upgrade, PR-lint, mergify and a PR template.
+  github: true,
+  githubOptions: { mergify: false, pullRequestLint: false },
+  pullRequestTemplate: false,
+  depsUpgrade: false,
+  workflowNodeVersion: NODE_VERSION,
+  workflowPackageCache: true,
+  buildWorkflowOptions: {
+    // projen defaults to pull_request + workflow_dispatch. With release off,
+    // nothing would then verify main after a merge.
+    workflowTriggers: {
+      pullRequest: {},
+      push: { branches: ["main"] },
+      workflowDispatch: {},
+    },
+  },
   // The root holds only repo-level invariant tests; there is no src/ to compile.
   // rootDir must widen to "." to match: projen defaults it to srcdir, which
   // would make `tsc --noEmit` at the root fail TS6059 on its own test files.
@@ -162,6 +193,85 @@ const rootLint = addLintTasks(root);
 // One oxlint pass from the root covers every package, so `npm test` at the top
 // level gates on lint across the whole repo.
 root.testTask.spawn(rootLint);
+
+/**
+ * Security scanning, in its own workflow rather than bolted onto `build`.
+ *
+ * Three jobs because the three tools answer different questions and fail for
+ * different reasons: a vulnerable dependency, a committed credential, and a
+ * flaw in code we wrote ourselves. Folding them into one job would collapse
+ * three distinct signals into a single red X.
+ */
+if (!root.github) {
+  throw new Error("root.github is required: the security workflow attaches to it");
+}
+const security = root.github.addWorkflow("security");
+security.on({
+  pullRequest: {},
+  push: { branches: ["main"] },
+  workflowDispatch: {},
+});
+
+const checkout = {
+  name: "Checkout",
+  uses: "actions/checkout@v4",
+};
+
+security.addJob("audit", {
+  runsOn: ["ubuntu-latest"],
+  permissions: { contents: JobPermission.READ },
+  steps: [
+    checkout,
+    {
+      name: "Setup Node.js",
+      uses: "actions/setup-node@v4",
+      with: { "node-version": NODE_VERSION, cache: "npm" },
+    },
+    { name: "Install dependencies", run: "npm ci" },
+    // .npmrc sets legacy-peer-deps, which disables npm's own compatibility
+    // checking repo-wide. Auditing is part of what compensates for that.
+    // --audit-level=high so a low-severity advisory in a dev dependency does
+    // not block every pull request.
+    { name: "Audit dependencies", run: "npm audit --audit-level=high" },
+  ],
+});
+
+security.addJob("secrets", {
+  runsOn: ["ubuntu-latest"],
+  permissions: { contents: JobPermission.READ },
+  steps: [
+    // fetch-depth 0: a credential committed earlier and removed later is still
+    // in the history, and still leaked.
+    { ...checkout, with: { "fetch-depth": 0 } },
+    {
+      name: "Scan for committed credentials",
+      uses: "gitleaks/gitleaks-action@v2",
+      env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" },
+    },
+  ],
+});
+
+security.addJob("codeql", {
+  runsOn: ["ubuntu-latest"],
+  permissions: {
+    contents: JobPermission.READ,
+    // CodeQL uploads its findings to the repository's security tab.
+    securityEvents: JobPermission.WRITE,
+  },
+  steps: [
+    checkout,
+    {
+      name: "Initialize CodeQL",
+      uses: "github/codeql-action/init@v3",
+      // No build step: CodeQL extracts TypeScript directly.
+      with: { languages: "javascript-typescript" },
+    },
+    {
+      name: "Analyze",
+      uses: "github/codeql-action/analyze@v3",
+    },
+  ],
+});
 
 /**
  * The Pulumi component library. Declared before runway-cli in the capability
