@@ -13,8 +13,30 @@ import { describe, expect, it } from "vitest";
 
 const root = join(__dirname, "..");
 
-const packageJson = (): Record<string, any> =>
-  JSON.parse(readFileSync(join(root, "package.json"), "utf-8"));
+interface PackageJson {
+  readonly devDependencies: Record<string, string>;
+  readonly bin?: Record<string, string>;
+}
+
+interface TasksJson {
+  readonly tasks: Record<string, { readonly steps: { readonly exec?: string }[] }>;
+}
+
+interface FilesJson {
+  readonly files: string[];
+}
+
+const read = (...segments: string[]): string =>
+  readFileSync(join(root, ...segments), "utf-8");
+
+const packageJson = (): PackageJson =>
+  JSON.parse(read("package.json")) as PackageJson;
+
+const tasksJson = (): TasksJson =>
+  JSON.parse(read(".projen", "tasks.json")) as TasksJson;
+
+const filesJson = (): FilesJson =>
+  JSON.parse(read(".projen", "files.json")) as FilesJson;
 
 describe("toolchain", () => {
   it("resolves TypeScript 7, not a silently-pinned 5.x", () => {
@@ -29,6 +51,43 @@ describe("toolchain", () => {
 
   it("declares a runway bin entry", () => {
     expect(packageJson().bin).toHaveProperty("runway");
+  });
+});
+
+describe("linter", () => {
+  const lintCommand = (task: string): string =>
+    tasksJson()
+      .tasks[task].steps.map((step) => step.exec ?? "")
+      .join(" ");
+
+  it("pins oxlint — ESLint cannot run on TypeScript 7", () => {
+    expect(packageJson().devDependencies.oxlint).toBe("1.80.0");
+  });
+
+  it("pins oxlint-tsgolint so type-aware rules are available", () => {
+    expect(packageJson().devDependencies["oxlint-tsgolint"]).toBe("7.0.2001");
+  });
+
+  it("registers a lint task that gates on warnings", () => {
+    const command = lintCommand("lint");
+    expect(command).toContain("oxlint");
+    expect(command).toContain("--type-aware");
+    // Without this, oxlint reports and exits 0 — a report, not a gate.
+    expect(command).toContain("--deny-warnings");
+  });
+
+  it("registers a lint:fix task that autofixes instead of gating", () => {
+    const command = lintCommand("lint:fix");
+    expect(command).toContain("--fix");
+    expect(command).not.toContain("--deny-warnings");
+  });
+
+  it("generates .oxlintrc.json through projen rather than by hand", () => {
+    expect(existsSync(join(root, ".oxlintrc.json"))).toBe(true);
+    // projen's usual "//" marker cannot be used here — oxlint rejects unknown
+    // config fields — so ownership is asserted from projen's own file registry.
+    const managed = filesJson().files;
+    expect(managed).toContain(".oxlintrc.json");
   });
 });
 

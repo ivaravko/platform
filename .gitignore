@@ -36,6 +36,7 @@ jspm_packages/
 /lib
 /dist/
 !/projenrc/tsconfig.json
+!/.oxlintrc.json
 dist/
 .tmp-scaffold/
 !/.projenrc.ts

@@ -11,6 +11,16 @@
       "type": "build"
     },
     {
+      "name": "oxlint-tsgolint",
+      "version": "7.0.2001",
+      "type": "build"
+    },
+    {
+      "name": "oxlint",
+      "version": "1.80.0",
+      "type": "build"
+    },
+    {
       "name": "projen",
       "type": "build"
     },

@@ -127,6 +127,24 @@
         }
       ]
     },
+    "lint": {
+      "name": "lint",
+      "description": "Lint with oxlint, type-aware; warnings fail the build",
+      "steps": [
+        {
+          "exec": "oxlint --type-aware --deny-warnings"
+        }
+      ]
+    },
+    "lint:fix": {
+      "name": "lint:fix",
+      "description": "Lint with oxlint and autofix what is fixable",
+      "steps": [
+        {
+          "exec": "oxlint --type-aware --fix"
+        }
+      ]
+    },
     "package": {
       "name": "package",
       "description": "Creates the distribution package",
@@ -166,6 +184,9 @@
       "steps": [
         {
           "exec": "vitest run"
+        },
+        {
+          "spawn": "lint"
         }
       ]
     },
@@ -197,6 +218,8 @@
             "update",
             "@types/node",
             "constructs",
+            "oxlint-tsgolint",
+            "oxlint",
             "projen",
             "typescript",
             "vitest"

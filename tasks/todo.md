@@ -44,25 +44,25 @@ A single projen-managed TypeScript package. Not a monorepo — there is only one
 
 ---
 
-### Task 1b: Wire Oxlint into the platform package
+### ✅ Task 1b: Wire Oxlint into the platform package — DONE
 Restores the lint gate that TypeScript 7 took away. Separate from Task 1 because Task 1 shipped
 without a linter and is already committed — this is the follow-up that closes it.
 
 **Acceptance criteria**
-- [ ] `.projenrc.ts` registers a `lint` task running `oxlint --type-aware --deny-warnings`, and a
+- [x] `.projenrc.ts` registers a `lint` task running `oxlint --type-aware --deny-warnings`, and a
       `lint:fix` variant with `--fix`; `eslint: false` stays (projen has no oxlint component)
-- [ ] `oxlint@1.80.0` and `oxlint-tsgolint@7.0.2001` are pinned devDeps
-- [ ] `--deny-warnings` is present, so a warning fails the build rather than printing a report
-- [ ] `.oxlintrc.json` is projen-generated, not hand-written — it is config, and the repo's rule is
+- [x] `oxlint@1.80.0` and `oxlint-tsgolint@7.0.2001` are pinned devDeps
+- [x] `--deny-warnings` is present, so a warning fails the build rather than printing a report
+- [x] `.oxlintrc.json` is projen-generated, not hand-written — it is config, and the repo's rule is
       that projen owns config
 
 **Verification**
-- [ ] `npm run lint` exits 0 on the current tree
-- [ ] Introducing an unused variable makes `npm run lint` exit non-zero, and removing it restores 0
+- [x] `npm run lint` exits 0 on the current tree
+- [x] Introducing an unused variable makes `npm run lint` exit non-zero, and removing it restores 0
       — proves the gate actually gates
-- [ ] A floating promise is caught, proving `--type-aware` is live and not silently syntax-only
-- [ ] `npm install && npx projen && npm run build && npm test && npm run lint` passes from a clean clone
-- [ ] `npx projen` twice still produces zero diff
+- [x] A floating promise is caught, proving `--type-aware` is live and not silently syntax-only
+- [x] `npm install && npx projen && npm run build && npm test && npm run lint` passes from a clean clone
+- [x] `npx projen` twice still produces zero diff
 
 **Dependencies:** Task 1
 **Files:** `.projenrc.ts`, `.oxlintrc.json` (generated), `test/toolchain.test.ts` (assert the pins)
