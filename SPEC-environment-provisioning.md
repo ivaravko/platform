@@ -301,11 +301,6 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 5. **Does production allow *any* human break-glass path?** EP-01 says no. Real incidents sometimes
    say otherwise. If a break-glass role is wanted, it should be specified deliberately — time-boxed,
    alerting, and audited — rather than appearing later as an exception nobody reviewed.
-6. **Should a staging-only service expire?** EP-07 reports incompleteness forever and nothing
-   escalates. An alternative is for the report to sharpen with age — a warning after a month, a
-   failing audit after a quarter — on the argument that "temporary" staging-only is exactly the
-   state that becomes permanent. That may be paternalistic for a platform this young; it is worth
-   deciding rather than defaulting.
-7. **What does this module do about the existing prerequisite gap?** `service-stacks` needs
+6. **What does this module do about the existing prerequisite gap?** `service-stacks` needs
    `SecureServiceAccount` and `SecureArtifactRepository`, which have no spec. They are not this
    module's job, but nothing downstream ships without them.

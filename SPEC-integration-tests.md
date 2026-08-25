@@ -123,6 +123,17 @@ a test that reads Pulumi state would have missed it.
 [SPEC.md](SPEC.md#boundaries)'s Never list is amended to scope the exception to this workflow and
 this project. Tier A and Tier B are now planned together rather than sequentially.
 
+**This tier automates a run that has already been performed once by hand.** Commits `feb337b`
+(*Deploy and verify the controls on real infrastructure*) and `dd5c503` (*Tear down the integration
+deployment, proving CR-06 both ways*) deployed a private and a public service to
+`enduring-badge-506610-u9/europe-west1`, verified CR-01, CR-03, CR-04, CR-07 and CR-08 against the
+live API, and destroyed both. Those commits changed documentation only — no test code exists.
+
+That precedent matters twice over. It de-risks Tier B: the resource shapes are known to deploy, and
+the assertions below are transcriptions of readings already taken, not guesses. And it is the
+argument for automating them — a control verified by hand once is verified on the day someone
+remembered to look, which is the same failure mode as a control with no test at all.
+
 ## Commands
 
 ```bash
@@ -246,6 +257,11 @@ to create. A JSON key in a GitHub secret to test that library would be self-refu
 CI authenticates via `google-github-actions/auth` with WIF; a local run uses application-default
 credentials. **No credential is ever written to the repo or to a projen-generated file.**
 
+**This tier consumes a WIF pool; it never provisions one.** Provisioning is EP-03 in
+[SPEC-environment-provisioning.md](SPEC-environment-provisioning.md). Standing up a second pool
+here would duplicate the identity boundary that module exists to own, and two pools with different
+attribute conditions is precisely how a permissive one survives review.
+
 ### Cost and cleanup
 
 Tier A costs nothing. Tier B deploys a scale-to-zero Cloud Run service for the duration of one
@@ -334,9 +350,15 @@ automate `pulumi up`, and any other unattended invocation still violates SPEC.md
    satisfied; enabling them is a task in the plan, not yet executed. Note this partly pre-empts
    [SPEC.md OQ4](SPEC.md#open-questions) (Binary Authorization defaults) — enabling the API does
    not decide whether BinAuthz defaults on, and OQ4 stays open.
-3. **WIF setup — who performs it.** Approved in principle 2026-08-25, but the pool, provider, and
-   repository binding need org-level access this spec's author does not have. Still to confirm:
-   who runs the setup, and whether Tier A runs on `workflow_dispatch` with a local credential in
-   the meantime. **This gates CI only — both tiers can be built and run locally without it.**
+3. ~~**WIF setup — who performs it.**~~ **RESOLVED by the capability map, not by a decision.**
+   [SPEC-environment-provisioning.md](SPEC-environment-provisioning.md) now owns WIF provisioning
+   as control **EP-03** — *"CI authenticates by Workload Identity Federation; no service account
+   key is created, ever"* — and that module entered the map after this spec was drafted. This tier
+   therefore **consumes** the pool rather than provisioning one, and must not create its own.
+
+   What remains is ordering, not ownership: `environment-provisioning` is unbuilt, so until it
+   ships, the `integration` workflow runs on `workflow_dispatch` with a local credential. Confirm
+   that interim is acceptable, or hold CI wiring until EP-03 lands. **Neither tier is blocked
+   locally** — both run today against application-default credentials.
 4. **Ten green nights is a guess.** It is a stand-in for "stable enough to trust". If pre-release
    is the only moment this tier's verdict is acted on, a shorter bar is defensible.
