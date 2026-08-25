@@ -31,6 +31,11 @@
       "type": "build"
     },
     {
+      "name": "google-auth-library",
+      "version": "^10",
+      "type": "build"
+    },
+    {
       "name": "oxlint-tsgolint",
       "version": "7.0.2001",
       "type": "build"

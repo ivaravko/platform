@@ -23,10 +23,32 @@ import * as pulumi from "@pulumi/pulumi";
 
 const config = new pulumi.Config();
 
+/**
+ * Teardown needs this, and finding out why cost a real orphaned service.
+ *
+ * CR-06 defaults `deletionProtection` on, and the provider then refuses:
+ * `cannot destroy service without setting deletion_protection=false`. So an
+ * automated tier cannot deploy a protected service and simply destroy it — it
+ * must first flip the flag and re-apply. The harness sets this immediately
+ * before teardown and never during the assertions, so every control is observed
+ * on a service that is genuinely protected.
+ *
+ * This uses the component's own justified escape hatch rather than reaching for
+ * a raw resource, because the escape hatch is part of what CR-06 promises and
+ * a tier that bypassed it would not be testing the component's real behaviour.
+ */
+const releaseForTeardown = config.getBoolean("releaseDeletionProtection") ?? false;
+
 const service = new SecureContainerService("integration-private", {
   location: config.require("location"),
   image: config.require("image"),
   serviceAccountEmail: config.require("serviceAccountEmail"),
+  deletionProtection: releaseForTeardown
+    ? {
+        disableJustification:
+          "Integration fixture teardown: the tier destroys everything it creates.",
+      }
+    : true,
 });
 
 /**

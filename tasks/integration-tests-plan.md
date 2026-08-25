@@ -27,9 +27,15 @@ for; the API reports what GCP did. CR-06 is the standing proof that these differ
 `deletionProtection: true`, the v2 API returns `null`. A harness that reads state would have
 reported that control as verified.
 
-**One harness, two tiers, one lifecycle helper.** `withStack` owns up/destroy and destroys in a
-`finally`. Teardown failure fails the test rather than being swallowed — a leaked Cloud Run service
-in a sandbox is cheap, but a teardown that silently stopped working is how it stops being a sandbox.
+**One harness, two tiers, one lifecycle helper.** `withDeployedStack` owns up/destroy. Teardown
+failure fails the test rather than being swallowed — a leaked Cloud Run service in a sandbox is
+cheap, but a teardown that silently stopped working is how it stops being a sandbox.
+
+**Amended in T8: teardown is two phases, and nothing throws from `finally`.** CR-06 defaults
+deletion protection on, and the provider then refuses to destroy — so the harness releases
+protection and re-applies before destroying. Errors are recorded and rethrown after the `finally`,
+body error first: a `throw` inside `finally` replaces whatever the body was already throwing, so a
+teardown failure would swallow the assertion failure that caused it.
 
 **Fixtures are precompiled JavaScript with `typescript: false` in `Pulumi.yaml`.** Not a style
 choice: Pulumi runs `.ts` stacks through ts-node, which throws under TypeScript 7 (`ts.sys` is
@@ -199,7 +205,7 @@ fixture · `npx projen` idempotent · **human review before Tier A.**
 
 ### Phase 3: Tier B — deploy, assert, destroy
 
-- [ ] **T6: Live GCP API client**
+- [x] **T6: Live GCP API client** — done
   - **Description:** Read deployed services back through the Cloud Run v2 API. Deliberately has no
     access to Pulumi state, so a test cannot accidentally assert against the wrong source.
   - **Acceptance:** returns raw API responses, unnormalised — `deletionProtection: null` must
@@ -207,13 +213,13 @@ fixture · `npx projen` idempotent · **human review before Tier A.**
   - **Verify:** reads back a service deployed by hand.
   - **Dependencies:** T1 · **Files:** `test-integration/support/gcp-client.ts` · **S**
 
-- [ ] **T7: `withStack` lifecycle helper**
+- [x] **T7: `withDeployedStack` lifecycle helper** — done
   - **Description:** up → yield outputs → destroy in `finally`, teardown result asserted.
   - **Acceptance:** a thrown assertion still destroys; a failed destroy fails the test.
   - **Verify:** a fixture test that throws on purpose leaves the project empty.
   - **Dependencies:** T2, T6 · **Files:** `test-integration/support/sandbox.ts` (+1 test) · **S**
 
-- [ ] **T8: CR-06 — provider-vs-API divergence**
+- [x] **T8: CR-06 — provider-vs-API divergence** — done, verified on real infrastructure
   - **Description:** Assert state says `true` and the v2 API says `null`. The divergence *is* the
     assertion, so a provider change that closes it fails the suite and forces the mapping update.
   - **Acceptance:** both readings asserted; the test names the *Known gaps* entry it guards.

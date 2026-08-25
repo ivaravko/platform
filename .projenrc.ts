@@ -83,6 +83,12 @@ const root = new typescript.TypeScriptProject({
     PULUMI,
     PULUMI_GCP,
     "@runway/gcp-components@*",
+    // Tier B reads deployed state back through the Cloud Run API rather than
+    // through Pulumi state. Google's own auth library rather than shelling out
+    // to gcloud: it reads application-default credentials directly, which is
+    // also the form `google-github-actions/auth` produces over WIF, so CI needs
+    // no gcloud install. Caret range — it is dev tooling, not a @pulumi/* pin.
+    "google-auth-library@^10",
   ],
 
   // The platform's own CI. Only the root gets a workflow — `common` leaves

@@ -130,6 +130,103 @@ export const withFixtureStack = async <T>(
 };
 
 
+/** What a deployed stack exposes to its assertions. */
+export interface Deployment {
+  /** Stack outputs, as Pulumi recorded them — the "what we asked for" side. */
+  readonly outputs: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Deploys a fixture, runs `body` against it, and destroys it — always.
+ *
+ * **Destroy is in a `finally` and its result is asserted, not swallowed.** A
+ * leaked Cloud Run service in a sandbox costs pennies; a teardown that silently
+ * stopped working is how the sandbox stops being a sandbox. If `destroy` fails
+ * the call throws, even when the body succeeded, because a green test over a
+ * project that is quietly filling up is the worse outcome.
+ *
+ * If the body *also* threw, the body's error wins and the teardown failure is
+ * attached to it. Replacing a real assertion failure with a cleanup error would
+ * hide the finding behind the janitorial problem.
+ *
+ * Ordering matters: `destroy` removes the cloud resources, and only then does
+ * `withFixtureStack` remove the stack state. Reversed, the state that names
+ * what to destroy would be gone first and the resources orphaned.
+ */
+export const withDeployedStack = async <T>(
+  options: FixtureStackOptions,
+  body: (deployment: Deployment) => Promise<T>,
+): Promise<T> =>
+  withFixtureStack(options, async (stack) => {
+    // A tagged outcome rather than `T | undefined`. The latter needs a cast to
+    // return, and the lint gate rejects casting a generic — rightly: `undefined`
+    // may be a perfectly good `T`, so the cast would paper over a body that
+    // never ran rather than reporting it.
+    let outcome: { readonly ok: true; readonly value: T } | {
+      readonly ok: false;
+      readonly error: unknown;
+    } = { ok: false, error: new Error("the deployment body never ran") };
+    let teardownError: unknown;
+
+    try {
+      const up = await stack.up();
+      const outputs = Object.fromEntries(
+        Object.entries(up.outputs).map(([key, output]) => [key, output.value]),
+      );
+      outcome = { ok: true, value: await body({ outputs }) };
+    } catch (error) {
+      outcome = { ok: false, error };
+    } finally {
+      try {
+        await releaseAndDestroy(stack);
+      } catch (error) {
+        teardownError = error;
+      }
+    }
+
+    // Errors are recorded and rethrown out here rather than from the `finally`.
+    // A `throw` inside `finally` replaces whatever the body was already
+    // throwing, so a teardown failure would silently swallow the assertion
+    // failure that caused it — the lint gate names this `no-unsafe-finally`.
+    //
+    // Body first: if both failed, the assertion is the finding and the orphaned
+    // resource is a consequence of it.
+    if (!outcome.ok) {
+      throw outcome.error;
+    }
+    // Still fatal on its own. A leaked service costs pennies; a teardown that
+    // quietly stopped working is how the sandbox stops being a sandbox.
+    if (teardownError !== undefined) {
+      throw teardownError;
+    }
+
+    return outcome.value;
+  });
+
+/**
+ * Two-phase teardown: release deletion protection, then destroy.
+ *
+ * CR-06 defaults protection on and the provider then refuses —
+ * `cannot destroy service without setting deletion_protection=false`. So an
+ * automated tier cannot deploy a protected service and simply destroy it.
+ *
+ * Found the hard way. The first Tier B run left a real Cloud Run service
+ * behind, and removing it needed `gcloud run services delete` — which worked
+ * precisely because CR-06 guards the IaC path only, the control's own
+ * documented gap.
+ *
+ * The release happens here and nowhere else, so every assertion in the body ran
+ * against a genuinely protected service.
+ */
+const releaseAndDestroy = async (stack: Stack): Promise<void> => {
+  const project = (await stack.workspace.projectSettings()).name;
+  await stack.setConfig(`${project}:releaseDeletionProtection`, {
+    value: "true",
+  });
+  await stack.up();
+  await stack.destroy();
+};
+
 /**
  * Every resource the engine planned, as the provider received it.
  *
