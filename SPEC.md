@@ -49,7 +49,7 @@ Versions verified against the npm registry and the local toolchain on 2026-08-24
 | Type-aware lint    | `oxlint-tsgolint`          | `7.0.2001` |
 | Runtime            | Node.js                    | `>=22`, dev on `26.3.0` |
 | Repo/build manager | projen                     | `0.103.2` |
-| Package manager    | npm workspaces             | `>=10`, dev on `11.16.0` |
+| Package manager    | npm workspaces             | `>=11`, dev on `11.16.0` |
 | IaC engine         | `@pulumi/pulumi`           | `3.259.0` |
 | GCP provider       | `@pulumi/gcp`              | `9.35.1`  |
 | Policy as code     | `@pulumi/policy`           | `1.21.0`  |

@@ -56,6 +56,13 @@ describe("platform CI: build", () => {
     expect(stepsOf(workflow("build").jobs.build)).toContain("projen build");
   });
 
+  it("pins npm, because the lockfile is npm 11 format", () => {
+    // Node 22.18 bundles npm 10, which strips the `libc` fields npm 11 writes.
+    // Unpinned, every CI run rewrites package-lock.json and the mutation check
+    // fails the build — which is exactly how this was found.
+    expect(stepsOf(workflow("build").jobs.build)).toContain("npm@11.16.0");
+  });
+
   it("keeps self-mutation, as the generated repos do", () => {
     expect(Object.keys(workflow("build").jobs)).toContain("self-mutation");
   });
