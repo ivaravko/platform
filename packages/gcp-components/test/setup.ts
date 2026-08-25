@@ -1,4 +1,5 @@
 import * as pulumi from "@pulumi/pulumi";
+import { SecureServiceAccount } from "../src/service-account/secure-service-account";
 
 /**
  * Shared Pulumi test harness.
@@ -58,13 +59,39 @@ void pulumi.runtime.setMocks({
     // Provider-computed outputs the mock must stand in for: with only `inputs`,
     // anything the real provider derives (a Cloud Run service's uri) resolves to
     // undefined and assertions on it would pass for the wrong reason.
-    state:
-      args.type === "gcp:cloudrunv2/service:Service"
-        ? { ...args.inputs, uri: `https://${args.name}-mocked-ew.a.run.app` }
-        : args.inputs,
+    state: { ...args.inputs, ...computedOutputs(args) },
   }),
   call: (args: pulumi.runtime.MockCallArgs) => args.inputs,
 });
+
+/**
+ * Provider-computed outputs the mock must stand in for.
+ *
+ * With only `args.inputs`, anything the real provider derives resolves to
+ * `undefined` — and an assertion that such a field is absent would pass for the
+ * wrong reason. Each entry here mirrors the shape the GCP provider actually
+ * returns.
+ */
+const computedOutputs = (
+  args: pulumi.runtime.MockResourceArgs,
+): Record<string, unknown> => {
+  const inputs = args.inputs as Record<string, unknown>;
+  switch (args.type) {
+    case "gcp:cloudrunv2/service:Service":
+      return { uri: `https://${args.name}-mocked-ew.a.run.app` };
+    case "gcp:serviceaccount/account:Account": {
+      const email = `${String(inputs.accountId)}@${String(inputs.project)}.iam.gserviceaccount.com`;
+      return {
+        email,
+        member: `serviceAccount:${email}`,
+        name: `projects/${String(inputs.project)}/serviceAccounts/${email}`,
+        uniqueId: `${args.name}-unique-id`,
+      };
+    }
+    default:
+      return {};
+  }
+};
 
 /**
  * Resolves an Output to its value.
@@ -76,3 +103,20 @@ void pulumi.runtime.setMocks({
  */
 export const resolve = <T>(output: pulumi.Output<T>): Promise<T> =>
   new Promise((res) => output.apply(res));
+
+let serviceAccountCount = 0;
+
+/**
+ * A `SecureServiceAccount` for tests that need a runtime identity.
+ *
+ * Names are unique per call because Pulumi resource names must be. The email it
+ * yields under mocks is `api-runtime@my-proj.iam.gserviceaccount.com`, matching
+ * what the real provider derives from the same inputs.
+ */
+export const testServiceAccount = (): SecureServiceAccount => {
+  serviceAccountCount += 1;
+  return new SecureServiceAccount(`test-sa-${String(serviceAccountCount)}`, {
+    accountId: "api-runtime",
+    project: "my-proj",
+  });
+};

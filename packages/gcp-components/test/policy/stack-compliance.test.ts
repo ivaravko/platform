@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolve, resourcesFor } from "../setup";
+import { resolve, resourcesFor, testServiceAccount } from "../setup";
 import { SecureContainerService } from "../../src/container-service/secure-container-service";
 import {
   checkBinaryAuthorization,
@@ -30,7 +30,6 @@ import {
  * What this also does not cover: that Pulumi loads and executes the pack.
  */
 
-const SA = "api-runtime@my-proj.iam.gserviceaccount.com";
 const IMAGE = "europe-west1-docker.pkg.dev/p/r/api:v1";
 const SERVICE_TYPE = "gcp:cloudrunv2/service:Service";
 
@@ -59,7 +58,7 @@ describe("a stack of only SecureContainerService passes its own policy pack", ()
     const svc = new SecureContainerService("compliant-private", {
       location: "europe-west1",
       image: IMAGE,
-      serviceAccountEmail: SA,
+      serviceAccount: testServiceAccount(),
     });
     await resolve(svc.service.ingress);
     expect(violationsFor(await resourcesFor("compliant-private"))).toEqual([]);
@@ -69,7 +68,7 @@ describe("a stack of only SecureContainerService passes its own policy pack", ()
     const svc = new SecureContainerService("compliant-public", {
       location: "europe-west1",
       image: IMAGE,
-      serviceAccountEmail: SA,
+      serviceAccount: testServiceAccount(),
       publicAccess: { justification: "handles public webhooks from Stripe" },
     });
     await resolve(svc.service.ingress);
@@ -83,7 +82,7 @@ describe("a stack of only SecureContainerService passes its own policy pack", ()
     const svc = new SecureContainerService("compliant-binauthz", {
       location: "europe-west1",
       image: IMAGE,
-      serviceAccountEmail: SA,
+      serviceAccount: testServiceAccount(),
       binaryAuthorization: { useDefault: true },
     });
     await resolve(svc.service.ingress);
@@ -96,7 +95,7 @@ describe("a stack of only SecureContainerService passes its own policy pack", ()
     const svc = new SecureContainerService("mixed-ok", {
       location: "europe-west1",
       image: IMAGE,
-      serviceAccountEmail: SA,
+      serviceAccount: testServiceAccount(),
     });
     await resolve(svc.service.ingress);
     const stack: PolicyResourceLike[] = [

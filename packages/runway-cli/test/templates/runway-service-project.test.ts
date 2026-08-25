@@ -70,6 +70,11 @@ describe("scaffold file tree", () => {
       ".projen/tasks.json",
       ".projenrc.ts",
       "README.md",
+      // The load-bearing artifact: a worked example composing all three
+      // components, with no raw gcp.* resource anywhere in it.
+      "infra/Pulumi.yaml",
+      "infra/index.ts",
+      "infra/tsconfig.json",
       "package.json",
       "projenrc/tsconfig.json",
       "src/index.ts",
@@ -225,3 +230,94 @@ describe("build-out", () => {
     },
   );
 });
+
+describe("infra program", () => {
+  const infra = (): string => read("infra/index.ts");
+
+  it("composes all three components", () => {
+    for (const component of [
+      "SecureArtifactRepository",
+      "SecureServiceAccount",
+      "SecureContainerService",
+    ]) {
+      expect(infra(), component).toContain(component);
+    }
+  });
+
+  it("contains no `gcp.` at all, so the no-raw-resource claim is greppable", () => {
+    // Stricter than the rule needs, deliberately. A pulumi.Config named `gcp`
+    // would satisfy the resource check while making the file read as though it
+    // used the provider.
+    expect(infra()).not.toMatch(/\bgcp\./);
+  });
+
+  it("declares no raw gcp.* resource", () => {
+    // The scaffold must not teach the habit the product exists to prevent. A
+    // worked example that reaches for gcp.cloudrunv2.Service undoes every
+    // guardrail by demonstration.
+    expect(infra()).not.toMatch(/\bgcp\.(cloudrunv2|serviceaccount|artifactregistry|projects)\./);
+  });
+
+  it("imports the components package, not the provider, for resources", () => {
+    expect(infra()).toContain('from "@runway/gcp-components"');
+  });
+
+  it("passes the identity as a component, never as an email string", () => {
+    // CR-04 is a type-level guarantee now. An example that hand-wrote an email
+    // would not compile, but it would still teach the wrong shape.
+    expect(infra()).toMatch(/serviceAccount: identity/);
+    expect(infra()).not.toMatch(/serviceAccountEmail/);
+  });
+
+  it("warns that immutable tags mean releasing a new tag, not moving one", () => {
+    // AR-01 makes `latest` work exactly once. Someone will reach for it.
+    expect(infra()).toMatch(/immutable/i);
+  });
+
+  it("is compiled, which both produces what Pulumi runs and typechecks it", () => {
+    const tasks = JSON.parse(read(".projen/tasks.json")) as {
+      tasks: Record<string, { steps: { exec?: string; spawn?: string }[] }>;
+    };
+    const compileInfra = tasks.tasks["compile:infra"].steps
+      .map((s) => s.exec ?? "")
+      .join(" ");
+    expect(compileInfra).toContain("infra/tsconfig.json");
+    expect(compileInfra).not.toContain("--noEmit");
+    expect(tasks.tasks.compile.steps.some((s) => s.spawn === "compile:infra")).toBe(true);
+  });
+
+  it("runs the compiled output, never the source", () => {
+    // Pulumi runs a .ts program through ts-node with type checking on, which
+    // here means type-checking the whole @pulumi/gcp declaration graph on every
+    // invocation -- measured at over two minutes without completing, on both
+    // Pulumi's vendored ts-node 7 and a current ts-node 10. Compiled, the same
+    // preview finishes in seconds.
+    const yaml = read("infra/Pulumi.yaml");
+    expect(yaml).toMatch(/typescript:\s*false/);
+    expect(yaml).toMatch(/main:\s*lib\/index\.js/);
+  });
+});
+
+describe("scaffold toolchain", () => {
+  it("pins TypeScript 5, not the platform's 7", () => {
+    // On 7 the @pulumi/* peer range forces legacy-peer-deps on every generated
+    // repo, plus a precompile step and an isolated policy-pack install. The
+    // platform absorbs its own decisions; a service team should not.
+    const pkg = JSON.parse(read("package.json")) as {
+      devDependencies: Record<string, string>;
+    };
+    expect(Number.parseInt(pkg.devDependencies.typescript, 10)).toBeLessThan(7);
+  });
+
+  it("still emits no .npmrc, because on TypeScript 5 it needs none", () => {
+    expect(tree).not.toContain(".npmrc");
+  });
+
+  it("depends on the components package", () => {
+    const pkg = JSON.parse(read("package.json")) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(Object.keys(pkg.dependencies ?? {})).toContain("@runway/gcp-components");
+  });
+});
+

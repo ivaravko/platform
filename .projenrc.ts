@@ -28,6 +28,31 @@ const PULUMI_GCP = "@pulumi/gcp@9.35.1";
 const PULUMI_POLICY = "@pulumi/policy@1.21.0";
 
 /**
+ * TypeScript for the policy pack's own isolated install. **Deliberately not the
+ * repo's TypeScript 7 — aligning them breaks the pack.**
+ *
+ * Pulumi's policy-pack runner hardcodes ts-node on
+ * (`cmd/run-policy-pack/index.js:110`) and ignores `PulumiPolicy.yaml`, so
+ * `typescript: false` does nothing there. It then resolves `typescript` from
+ * `@pulumi/pulumi`'s location and only falls back to its vendored 3.8.3 if that
+ * `require` *throws*. TypeScript 7 imports fine but exposes no compiler API, so
+ * the fallback never fires and ts-node dies on `ts.sys.readFile`.
+ *
+ * What the pack actually needs is that **the nearest resolvable `typescript`
+ * has a compiler API** — not, as first thought, that no `typescript` resolves
+ * at all. That earlier framing was a location-dependent accident: it held only
+ * while the pack happened to sit outside any tree containing TypeScript.
+ */
+const POLICY_TYPESCRIPT = "typescript@5.9.3";
+
+/**
+ * Where the pack is installed for use. Outside `node_modules/`, so `npm ci`
+ * does not delete it — installing into `node_modules` and then mutating it was
+ * measured to be wiped by the first clean install, which is what CI runs.
+ */
+const POLICY_DIR = ".runway-policy";
+
+/**
  * Shared by the root and every subproject.
  *
  * TypeScript 7 is the native compiler: it exposes no JS compiler API, so
@@ -453,8 +478,45 @@ new JsonFile(gcpComponents, "policy/package.json", {
     version: "0.0.1",
     main: "index.js",
     private: true,
+    // Declared so the install set has one authoritative home. The pack is not
+    // installed in place -- see the `policy:install` task -- but a consumer
+    // reading this file should be able to see what it needs.
+    dependencies: Object.fromEntries(
+      [PULUMI, PULUMI_POLICY, PULUMI_GCP, POLICY_TYPESCRIPT].map((spec) => {
+        const at = spec.lastIndexOf("@");
+        return [spec.slice(0, at), spec.slice(at + 1)];
+      }),
+    ),
   },
 });
+
+/**
+ * Installs the policy pack into its own tree so it can actually run.
+ *
+ * The pack cannot execute from inside a repo that pins TypeScript 7 -- the
+ * runner would resolve that compiler and die. This gives it a tree whose
+ * nearest `typescript` is one Pulumi can use.
+ */
+gcpComponents.addTask("policy:install", {
+  description: `Install the policy pack into ${POLICY_DIR}/ so it can be run`,
+  // --install-links is load-bearing, not tidiness. Without it npm *symlinks* a
+  // local package, Node resolves through the real path, and the pack lands back
+  // inside the monorepo where TypeScript 7 resolves -- silently undoing the
+  // isolation this task exists to create. Measured: the symlinked form fails
+  // with the same ts.sys.readFile error as no isolation at all.
+  // The `rm -rf` is load-bearing too. npm skips re-copying a package it
+  // already has at the same version, and this package's version never changes
+  // -- so re-running over an existing install silently keeps the OLD pack.
+  // Measured: a rebuilt pack with two new rules did not propagate, and the
+  // preview went green with those rules simply absent. That is the exact
+  // silent failure this whole task exists to prevent.
+  exec:
+    `rm -rf ${POLICY_DIR} && npm install --prefix ${POLICY_DIR} ` +
+    `--no-audit --no-fund --legacy-peer-deps ` +
+    `--install-links . ${PULUMI} ${PULUMI_POLICY} ${PULUMI_GCP} ${POLICY_TYPESCRIPT}`,
+});
+
+gcpComponents.gitignore.exclude(`${POLICY_DIR}/`);
 
 new TextFile(gcpComponents, "policy/index.js", {
   lines: [

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolve, resourcesFor } from "../setup";
+import { resolve, resourcesFor, testServiceAccount } from "../setup";
 import { SecureContainerService } from "../../src/container-service/secure-container-service";
 
 /**
@@ -10,7 +10,6 @@ import { SecureContainerService } from "../../src/container-service/secure-conta
  * onto the resource so it is visible from `gcloud` without reading any source.
  */
 
-const SA = "api-runtime@my-proj.iam.gserviceaccount.com";
 const IMAGE = "europe-west1-docker.pkg.dev/p/r/api:v1";
 const JUSTIFICATION = "handles public webhooks from Stripe";
 
@@ -20,7 +19,7 @@ const publicService = (name: string, justification = JUSTIFICATION): SecureConta
   new SecureContainerService(name, {
     location: "europe-west1",
     image: IMAGE,
-    serviceAccountEmail: SA,
+    serviceAccount: testServiceAccount(),
     publicAccess: { justification },
   });
 
@@ -28,7 +27,7 @@ const privateService = (name: string): SecureContainerService =>
   new SecureContainerService(name, {
     location: "europe-west1",
     image: IMAGE,
-    serviceAccountEmail: SA,
+    serviceAccount: testServiceAccount(),
   });
 
 describe("CR-02: public exposure requires a justification", () => {

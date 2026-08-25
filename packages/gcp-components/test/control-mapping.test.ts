@@ -21,11 +21,11 @@ interface MappingRow {
   readonly policyRule: string;
 }
 
-/** Parses the control table. Rows are `| CR-0X | … | source | … | … | rule |`. */
+/** Parses the control tables. Rows are `| XX-0N | … | source | … | … | rule |`. */
 const rows = (): MappingRow[] =>
   readFileSync(MAPPING, "utf-8")
     .split("\n")
-    .filter((line) => /^\|\s*CR-\d{2}\s*\|/.test(line))
+    .filter((line) => /^\|\s*[A-Z]{2}-\d{2}\s*\|/.test(line))
     .map((line) => {
       const cells = line.split("|").map((c) => c.trim());
       // cells[0] is the empty string before the leading pipe.
@@ -49,11 +49,11 @@ const controlIdsInTests = (): Set<string> => {
       if (!entry.endsWith(".test.ts") || entry === "control-mapping.test.ts") {
         continue;
       }
-      for (const match of readFileSync(path, "utf-8").matchAll(/"(CR-\d{2})[^"]*"/g)) {
+      for (const match of readFileSync(path, "utf-8").matchAll(/"([A-Z]{2}-\d{2})[^"]*"/g)) {
         found.add(match[1]);
       }
       // "CR-01/CR-03: ..." names two controls in one title.
-      for (const match of readFileSync(path, "utf-8").matchAll(/\/(CR-\d{2})/g)) {
+      for (const match of readFileSync(path, "utf-8").matchAll(/\/([A-Z]{2}-\d{2})/g)) {
         found.add(match[1]);
       }
     }
@@ -63,14 +63,21 @@ const controlIdsInTests = (): Set<string> => {
 };
 
 describe("control mapping completeness", () => {
-  it("documents nine controls, numbered contiguously from one", () => {
-    const ids = rows().map((r) => r.id);
-    expect(ids).toHaveLength(9);
-    // Derived, not restated: a literal list here would reintroduce the control
-    // ids into this file and break the scanner that excludes it.
-    expect(ids).toEqual(
-      Array.from({ length: 9 }, (_, i) => `CR-0${String(i + 1)}`),
-    );
+  it("numbers every control contiguously from one, within its prefix", () => {
+    // Grouped by prefix so a second component's controls do not have to
+    // continue the first's numbering. Derived, never restated: a literal list
+    // here would reintroduce control ids into the file the scanner excludes.
+    const byPrefix = new Map<string, string[]>();
+    for (const { id } of rows()) {
+      const prefix = id.slice(0, 2);
+      byPrefix.set(prefix, [...(byPrefix.get(prefix) ?? []), id]);
+    }
+    expect(byPrefix.size).toBeGreaterThan(0);
+    for (const [prefix, ids] of byPrefix) {
+      expect(ids, prefix).toEqual(
+        ids.map((_, i) => `${prefix}-${String(i + 1).padStart(2, "0")}`),
+      );
+    }
   });
 
   it("has no row without a test — a control nothing proves is not a control", () => {

@@ -2,7 +2,7 @@ import * as gcp from "@pulumi/gcp";
 import * as pulumi from "@pulumi/pulumi";
 import { TYPE_NAMESPACE } from "../type-namespace";
 import { PUBLIC_ACCESS_PREFIX } from "./public-access-marker";
-import { assertUserManagedServiceAccount } from "./service-account-email";
+import { SecureServiceAccount } from "../service-account/secure-service-account";
 
 /** Arguments for {@link SecureContainerService}. */
 export interface SecureContainerServiceArgs {
@@ -13,14 +13,18 @@ export interface SecureContainerServiceArgs {
   readonly image: pulumi.Input<string>;
 
   /**
-   * Runtime identity. Must be a user-managed service account
-   * (`<id>@<project>.iam.gserviceaccount.com`); Google-managed default
-   * identities are rejected. Control CR-04.
+   * Runtime identity. Control CR-04.
    *
-   * A plain string is checked immediately. An `Output` can only be checked once
-   * it resolves, so that failure surfaces during `pulumi preview` instead.
+   * **Typed, not a string.** A `SecureServiceAccount` is always a user-managed
+   * account — its email is derived from an account id and a project — so the
+   * Google-managed default identities are not merely rejected, they are
+   * unreachable. There is no value of this argument that names one.
+   *
+   * This replaced `serviceAccountEmail: pulumi.Input<string>`, which v1 shipped
+   * only because this component did not yet exist. That form needed a runtime
+   * check, and half of it could not be unit-tested at all.
    */
-  readonly serviceAccountEmail: pulumi.Input<string>;
+  readonly serviceAccount: SecureServiceAccount;
 
   /**
    * Expose the service to the public internet. Opt-out from the hardened
@@ -75,6 +79,10 @@ export interface SecureContainerServiceArgs {
  * protection, emits no invoker IAM binding, and runs under the supplied
  * user-managed service account.
  *
+ * The runtime identity is a `SecureServiceAccount`, so the over-privileged
+ * default compute identity cannot be named at all — CR-04 is enforced by the
+ * type system here, and by the policy pack for raw resources that bypass it.
+ *
  * **A default-constructed service is not reachable, and that is deliberate.**
  * Ingress is limited to an internal load balancer and v1 has no networking
  * module, so nothing routes to it until the consumer puts a load balancer in
@@ -102,21 +110,6 @@ export class SecureContainerService extends pulumi.ComponentResource {
     opts?: pulumi.ComponentResourceOptions,
   ) {
     super(`${TYPE_NAMESPACE}:SecureContainerService`, name, {}, opts);
-
-    // Fast path: a literal is the common case, and failing at the call site
-    // beats failing several seconds into a preview.
-    if (typeof args.serviceAccountEmail === "string") {
-      assertUserManagedServiceAccount(args.serviceAccountEmail);
-    }
-
-    // The real guarantee. Covers Outputs, whose value is unknown until resolved,
-    // and re-checks literals at negligible cost. Keeping the argument typed as
-    // `Input<string>` is what lets a future `SecureServiceAccount.email` be
-    // passed here without a breaking change.
-    const serviceAccount = pulumi.output(args.serviceAccountEmail).apply((email) => {
-      assertUserManagedServiceAccount(email);
-      return email;
-    });
 
     const publicAccess = justifiedPublicAccess(args.publicAccess);
     this.isPublic = publicAccess !== undefined;
@@ -147,7 +140,7 @@ export class SecureContainerService extends pulumi.ComponentResource {
         // service in a project findable with `gcloud run services list --filter`.
         labels: publicAccess === undefined ? undefined : { [PUBLIC_LABEL]: "true" },
         template: {
-          serviceAccount,
+          serviceAccount: args.serviceAccount.email,
           containers: [{ image: args.image }],
         },
       },

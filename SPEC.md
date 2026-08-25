@@ -113,6 +113,12 @@ consequences, both verified rather than assumed:
 
 `tsc` and vitest both work on TS 7 — only the tools that link against the compiler API are affected.
 
+**Scaffolded repos do not inherit this.** They pin TypeScript 5: a generated repo composes
+`@runway/gcp-components`, whose `@pulumi/*` peers cap TypeScript at `<7`, so pinning 7 there fails
+`ERESOLVE` and would force `legacy-peer-deps`, a precompile step and an isolated policy-pack install
+onto every service team. The platform absorbs its own decisions. See
+[SPEC-runway-cli.md](SPEC-runway-cli.md#scaffold-output).
+
 **A third casualty, found in C2: `@pulumi/pulumi` cannot be installed at all without help.** It
 declares `peerDependencies: { typescript: ">= 3.8.3 < 7", "ts-node": ">= 7.0.1 < 12" }`, so npm
 refuses to resolve it alongside `typescript@7.0.2` and fails `ERESOLVE`. Both peers are marked
@@ -141,12 +147,12 @@ stack planned six resources with no ts-node involved.
 > imports fine — it simply has no compiler API — so the fallback never fires, and the vendored
 > ts-node then dies on `ts.sys.readFile`.
 >
-> **Consequence, verified both ways:** a policy pack fails to load from anywhere inside this
-> monorepo, because TypeScript 7 is resolvable from the root. Installed into a tree where
-> `typescript` does **not** resolve, the same pack loads and runs correctly — it passed a compliant
-> stack with zero violations and failed a non-compliant one with four mandatory violations. **How
-> the pack is distributed and consumed is therefore a correctness constraint, not packaging
-> detail.** See [SPEC-secure-container-service.md](SPEC-secure-container-service.md#hardening-controls).
+> **Consequence, and the mechanism that resolves it.** The requirement is that the **nearest
+> resolvable `typescript` has a compiler API** — not, as first recorded, that none resolves at all.
+> `npm run policy:install --workspace @runway/gcp-components` builds a tree satisfying that, and its
+> four load-bearing properties are documented and test-asserted in
+> [SPEC-secure-container-service.md](SPEC-secure-container-service.md#hardening-controls). Verified
+> end to end against a TypeScript 7 consumer, in both directions.
 
 Verified alongside: `tsc` 7 typechecks Pulumi components cleanly and vitest drives
 `pulumi.runtime.setMocks()` without issue, so only the ts-node paths are affected.
@@ -356,8 +362,19 @@ export class SecureContainerService extends pulumi.ComponentResource {
    clean clone with no GCP credentials present. Install precedes `projen`: `.projenrc.ts` imports
    `projen`, so it cannot execute before `node_modules` exists.
 2. `runway new my-service` produces a repo that, unmodified, passes its own `build`, `test`, `lint`.
-3. That generated repo's `pulumi preview` succeeds against a real GCP project and plans exactly:
-   one Artifact Registry repo, one service account, one Cloud Run service — and nothing public.
+3. ~~That generated repo's `pulumi preview` succeeds against a real GCP project~~ **— MET (D6).**
+   Verified against `enduring-badge-506610-u9`, resource by resource rather than by count:
+
+   | Planned | Configuration |
+   |---|---|
+   | 1× `artifactregistry/repository` | `DOCKER`, `STANDARD_REPOSITORY`, `immutableTags: true` |
+   | 1× `serviceaccount/account` | dedicated runtime identity, no roles |
+   | 1× `cloudrunv2/service` | `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER`, `deletionProtection: true`, `defaultUriDisabled: true`, running as that account |
+
+   **Nothing public**: no `ServiceIamMember` of any kind. The same preview with `--policy-pack`
+   reports zero violations, and a deliberately weakened copy — one raw `gcp.cloudrunv2.Service`
+   appended — fails with two mandatory violations, which is what makes the zero-violation result
+   mean the rules ran rather than that they were absent. `preview` only; nothing was created.
 4. Every row in `docs/control-mapping.md` links to a passing named test.
 5. The CrossGuard policy pack fails `pulumi preview` on a stack that declares a raw
    `gcp.cloudrunv2.Service` with `ingress: "INGRESS_TRAFFIC_ALL"` and no justification.

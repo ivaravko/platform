@@ -104,6 +104,15 @@
         }
       ]
     },
+    "policy:install": {
+      "name": "policy:install",
+      "description": "Install the policy pack into .runway-policy/ so it can be run",
+      "steps": [
+        {
+          "exec": "rm -rf .runway-policy && npm install --prefix .runway-policy --no-audit --no-fund --legacy-peer-deps --install-links . @pulumi/pulumi@3.259.0 @pulumi/policy@1.21.0 @pulumi/gcp@9.35.1 typescript@5.9.3"
+        }
+      ]
+    },
     "post-compile": {
       "name": "post-compile",
       "description": "Runs after successful compilation"

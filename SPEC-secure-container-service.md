@@ -26,45 +26,29 @@ more keystrokes than the secure one.
 Four decisions were taken before writing this spec. They are recorded here because each one
 contradicts something a reader would otherwise assume from [SPEC-gcp-components.md](SPEC-gcp-components.md).
 
-### 1. The service account is an email string, validated at runtime — not a `SecureServiceAccount`
+### 1. ~~The service account is an email string~~ — it is a `SecureServiceAccount`
 
-[SPEC-gcp-components.md](SPEC-gcp-components.md) specifies `serviceAccount` as a required arg
-*typed as* `SecureServiceAccount`, making the default compute SA unreachable through the type
-system. `SecureServiceAccount` does not exist yet, so v1 takes an email and validates it.
+**Superseded in D4, which is the outcome this decision was always waiting for.** The original text
+recorded a deliberate reduction: `SecureServiceAccount` did not exist, so v1 accepted
+`serviceAccountEmail: pulumi.Input<string>` and validated it at runtime — trading a compile-time
+guarantee for a runtime one, and recording the debt.
 
-**This is a real reduction in guarantee, and it is chosen knowingly.** A type error becomes a
-runtime error. Recorded as debt in [Open Questions](#open-questions).
+The argument is now `serviceAccount: SecureServiceAccount`. A `SecureServiceAccount`'s email is
+derived from an account id and a project, so it is always user-managed: the Google-managed default
+identities are **unreachable rather than rejected**. There is no value of this argument that names
+one, which is the guarantee [SPEC-gcp-components.md](SPEC-gcp-components.md) promised from the
+start.
 
-The validation is a **positive rule, not a denylist**, which is what makes it strong enough to
-carry the weight:
+**The untestable half went with it.** The string form needed validation inside `apply` for `Output`
+inputs, and a throw there is observable only as a rejected promise — `Output` exposes no rejection
+path publicly, and its internal one leaks unhandled rejections that vitest treats as fatal. That
+gap was documented in C4 and closed only by the integration run. With no string to validate there is
+no `apply`-time check left, so the gap does not exist rather than being worked around. A
+`@ts-expect-error` assertion, mutation-tested, holds the argument shut.
 
-```
-Accepted:  <id>@<project>.iam.gserviceaccount.com     (user-managed service accounts)
-Rejected:  everything else
-```
-
-Every Google-managed default sits outside `.iam.gserviceaccount.com` and is therefore rejected
-without being enumerated:
-
-| Identity | Email domain | Caught by |
-|---|---|---|
-| Default compute SA | `<num>-compute@developer.gserviceaccount.com` | positive rule |
-| App Engine default | `<project>@appspot.gserviceaccount.com` | positive rule |
-| Cloud Build default | `<num>@cloudbuild.gserviceaccount.com` | positive rule |
-
-A denylist would need updating every time Google adds a default identity. The positive rule never
-does. Known defaults are still pattern-matched — **only to produce a better error message**, never
-as the security boundary.
-
-**Where the check runs, and the cost of that.** The arg is `pulumi.Input<string>` so it can later
-accept `SecureServiceAccount.email` (an `Output`) without a breaking change. Consequently:
-
-- A **plain string** is validated synchronously in the constructor and throws immediately.
-- An **`Output`** is validated inside `.apply()`, so the failure surfaces during `pulumi preview`
-  as a Pulumi error, not at construction.
-
-Both paths are specified and both are tested. The asymmetry is a property of Pulumi's model, not a
-shortcut — stating it here stops a future reader from filing it as a bug.
+**The runtime check remains where it still matters.** `assertUserManagedServiceAccount` is unchanged
+and still backs CR-04's policy rule, because a consumer writing a raw `gcp.cloudrunv2.Service`
+bypasses the type system entirely. The type guards this component; the policy pack guards the rest.
 
 ### 2. v1 exposes Binary Authorization, and nothing else optional
 
@@ -256,14 +240,34 @@ place. **`runway-public` remains only a filtering convenience** — it is what m
 `gcloud` edit made between deployments. That needs a detective control (Cloud Asset Inventory,
 Security Command Center) and is out of v1 scope.
 
-**The pack must be consumed from a tree where `typescript` does not resolve — this is a correctness
-constraint, not packaging detail.** Pulumi's policy-pack runner hardcodes ts-node on
-(`cmd/run-policy-pack/index.js:110`) and ignores `PulumiPolicy.yaml`'s runtime options entirely, so
-`typescript: false` does nothing there. It falls back to a vendored `typescript@3.8.3` only when
-`require("typescript")` throws; TypeScript 7 imports fine but has no compiler API, so the fallback
-never fires and the pack dies on `ts.sys.readFile`. Verified both ways against a real preview: the
-pack fails to load from inside this monorepo, and loads and enforces correctly when installed into a
-tree without TypeScript. A consumer whose repo pins TypeScript 7 will hit the same wall.
+**Running the pack requires an isolated install — a correctness constraint, not packaging detail.**
+Pulumi's policy-pack runner hardcodes ts-node on (`cmd/run-policy-pack/index.js:110`) and ignores
+`PulumiPolicy.yaml`, so `typescript: false` does nothing there. It resolves `typescript` from
+`@pulumi/pulumi`'s location and falls back to its vendored 3.8.3 only if that `require` **throws**.
+TypeScript 7 imports fine but has no compiler API, so the fallback never fires and ts-node dies on
+`ts.sys.readFile`.
+
+**Correction to an earlier statement of this constraint.** C7 recorded it as *"the pack must be
+consumed from a tree where `typescript` does not resolve"*. That was a location-dependent accident —
+true only while the pack happened to sit outside any tree containing TypeScript. The real
+requirement is narrower and more useful: **the nearest resolvable `typescript` must have a compiler
+API.** Measured both ways: an isolated directory *inside* a TypeScript 7 repo fails when it contains
+no TypeScript (resolution walks up and finds 7), and succeeds when it contains TypeScript 5.
+
+`npm run policy:install --workspace @runway/gcp-components` creates that tree. Three properties of it
+are load-bearing, each verified by a failure rather than by reasoning, and each asserted by test
+because the failure mode is silent — the pack simply never loads and the stack goes unenforced:
+
+| Property | Why | What happens without it |
+|---|---|---|
+| Its own `typescript@5.x`, **not** the repo's 7 | The runner needs a compiler API | `ts.sys.readFile` crash |
+| Its own `@pulumi/pulumi` | Resolution starts from *its* location | Finds the consumer's TypeScript 7 |
+| `--install-links` | npm **symlinks** a local package; Node resolves through the real path | Pack lands back in the monorepo, TypeScript 7 again |
+| Outside `node_modules/` | `npm ci` deletes `node_modules` | Works locally, gone in CI |
+
+**Verified end to end against a TypeScript 7 consumer**: a compliant program passes with
+`✅ runway-gcp`, and a raw `gcp.cloudrunv2.Service` with `ingress: ALL` and a forged `runway-public`
+label fails the preview with two mandatory violations.
 
 **Deployed and verified on real infrastructure** (`enduring-badge-506610-u9`, `europe-west1`).
 Both services reached `Ready=True`, so the hardened defaults do not merely plan — they run:
@@ -417,7 +421,7 @@ Specific cases this component must carry:
   non-SA email, each asserting the message names the fix.
 - `serviceAccountEmail` as a plain string throws **synchronously**; as an `Output` it rejects
   **during resolution**. Both paths asserted — this is the documented asymmetry from
-  [Scope Decision 1](#1-the-service-account-is-an-email-string-validated-at-runtime--not-a-secureserviceaccount).
+  [Scope Decision 1](#1-the-service-account-is-an-email-string--it-is-a-secureserviceaccount).
 - `publicAccess: { justification: "" }` is rejected. An empty string satisfies the type and defeats
   the control.
 - The public path emits exactly one `ServiceIamMember`; the private path emits zero.
@@ -470,10 +474,10 @@ Inherits [SPEC.md](SPEC.md#boundaries) and
 
 ## Open Questions
 
-1. **When does `serviceAccountEmail` become `SecureServiceAccount`?** The typed form is the module's
-   central design claim and v1 ships a weaker version of it. Tighten it in `SecureServiceAccount`'s
-   own slice as a breaking change before any consumer exists, or add an overload and keep both?
-   Deciding now is cheap; deciding after publication is not.
+1. ~~**When does `serviceAccountEmail` become `SecureServiceAccount`?**~~ **RESOLVED in D4 —
+   before publishing, as a clean break with no overload.** With no consumers it was a one-line
+   change; after publishing it would have been a migration. Keeping both forms would have kept the
+   untestable `apply`-time path alive for the string one, which was the main thing worth removing.
 2. ~~**Does `publicAccess` need to survive `gcloud` label edits?**~~ **RESOLVED.** The rules key on
    intrinsic facts — `ingress: ALL`, an `allUsers`/`allAuthenticatedUsers` invoker binding — with a
    non-empty `description` justification as the required evidence. The sharper problem was not the

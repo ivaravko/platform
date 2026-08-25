@@ -8,6 +8,15 @@
 export { TYPE_NAMESPACE } from "./type-namespace";
 export { assertUserManagedServiceAccount } from "./container-service/service-account-email";
 export {
+  SecureArtifactRepository,
+  type SecureArtifactRepositoryArgs,
+} from "./artifact-registry/secure-artifact-repository";
+export { assertGrantableRoles } from "./service-account/role-allowlist";
+export {
+  SecureServiceAccount,
+  type SecureServiceAccountArgs,
+} from "./service-account/secure-service-account";
+export {
   SecureContainerService,
   type SecureContainerServiceArgs,
 } from "./container-service/secure-container-service";
