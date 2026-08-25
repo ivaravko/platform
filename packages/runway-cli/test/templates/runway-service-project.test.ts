@@ -100,6 +100,25 @@ describe("scaffold file tree", () => {
   });
 });
 
+describe("outdir default", () => {
+  it("falls back to a directory named after the service", () => {
+    // The documented default, and not an idle one: it is precisely what caused
+    // a scaffold to regenerate a nested copy of itself in Task 2, because the
+    // emitted .projenrc.ts omitted outdir. Left untested, that default is the
+    // one nobody exercises until it misbehaves.
+    const dir = mkdtempSync(join(tmpdir(), "runway-outdir-"));
+    const previous = process.cwd();
+    try {
+      process.chdir(dir);
+      new RunwayServiceProject({ name: "defaulted" }).synth();
+      expect(readdirSync(join(dir, "defaulted"))).toContain(".projenrc.ts");
+    } finally {
+      process.chdir(previous);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("TypeScript 7 survival kit", () => {
   it("runs .projenrc.ts through Node, not ts-node, which throws on TS 7", () => {
     const { tasks } = JSON.parse(read(".projen/tasks.json")) as {
