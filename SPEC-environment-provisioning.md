@@ -57,6 +57,34 @@ that granted it, and this module has no way to know why it exists — a bootstra
 someone's access is worse than one that stops and asks. Remediation is a decision for a human who
 knows the project's history.
 
+### Refusing well
+
+A refusal is only as good as what the operator can do next, and this one hands them a security
+decision about a project they may not have set up. So the message carries the whole decision, not
+just the verdict:
+
+```
+EP-06: acme-checkout-prd already grants deploy access to human principals.
+
+  group:platform-team@acme.com     roles/editor
+  user:dana@acme.com               roles/run.admin
+
+Adopting it would leave EP-01 unenforced — a developer could deploy to production
+by hand, which is the one thing this environment exists to prevent.
+
+Nothing was changed. To proceed, either remove these bindings, or adopt a
+different project as production.
+```
+
+Three properties make that useful rather than merely correct: it names **every** offending binding
+so the operator sees the full scope in one pass; it says **what would be untrue** rather than citing
+a control id at someone who has never read this spec; and it states plainly that **nothing was
+changed**, so no one goes looking for partial damage.
+
+**There is no `--fix`.** A flag that strips the bindings would put the silent removal back, one
+`--yes` away, and the operator who most wants it is the one least likely to know why the binding
+exists. Refusal is the feature.
+
 ## Staging first, and the drift it invites
 
 `--production-project` is optional because that is how teams actually adopt: get staging working,
@@ -321,6 +349,8 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
   org, and conflating the two puts a CLI in charge of the widest blast radius in GCP.
 - Silently remove a pre-existing IAM binding. Refuse and report (EP-06); the team that granted it
   may depend on it, and this module cannot know why it exists.
+- Add a `--fix`, `--force` or `--yes` escape from EP-06. The refusal is the feature; an override
+  reintroduces the silent removal one flag away.
 - Create a service account key. Federation or impersonation, always.
 - Reuse one project for both environments — it collapses the boundary this module exists to build.
 - Grant `roles/owner` or `roles/editor` to a deploy identity.
@@ -363,12 +393,18 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
    [The bootstrap paradox](#the-bootstrap-paradox-and-its-answer).
 3. ~~One WIF pool per service, or one per org?~~ **Resolved: one per service**, in that service's
    production project. See [Identity federation is per service](#identity-federation-is-per-service).
-4. **How does a team remediate an EP-06 failure?** The module refuses and reports, which is right,
-   but it leaves the operator holding a list of bindings and no guidance. A documented runbook is
-   probably enough; a `--fix` flag would re-introduce exactly the silent removal EP-06 forbids.
+4. ~~How does a team remediate an EP-06 failure?~~ **Resolved: the module refuses and never
+   repairs.** No `--fix` flag. Remediation is a human decision, and the refusal is what makes it
+   one — see [Refusing well](#refusing-well).
 5. ~~Does production allow *any* human break-glass path?~~ **Out of scope.** EP-01 stands as
    written: no human principal holds a deploy role in production. Should an incident later require
    one, it is a deliberate amendment to EP-01 with its own review — not a door this spec leaves ajar.
-6. **What does this module do about the existing prerequisite gap?** `service-stacks` needs
+6. **What counts as a "deploy-capable role"?** EP-06 cannot be implemented without the answer, and
+   a too-narrow definition lets the check pass while a human still holds effective deploy access.
+   `roles/owner` and `roles/editor` are obvious; `roles/run.admin` and `roles/iam.serviceAccountUser`
+   are the ones that actually matter for Cloud Run. Custom roles are the hard part — deciding by
+   role name is unreliable, so the check may need to expand each binding to its permission set and
+   look for the deploy verbs. `roles.ts` is where the answer lives.
+7. **What does this module do about the existing prerequisite gap?** `service-stacks` needs
    `SecureServiceAccount` and `SecureArtifactRepository`, which have no spec. They are not this
    module's job, but nothing downstream ships without them.
