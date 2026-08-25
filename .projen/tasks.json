@@ -82,6 +82,15 @@
         }
       ]
     },
+    "compile:fixtures": {
+      "name": "compile:fixtures",
+      "description": "Precompile integration fixture stacks; Pulumi cannot run TS 7 sources",
+      "steps": [
+        {
+          "exec": "tsc -p test-integration/fixtures/tsconfig.json"
+        }
+      ]
+    },
     "default": {
       "name": "default",
       "description": "Synthesize project files",
@@ -169,6 +178,44 @@
         },
         {
           "spawn": "lint"
+        }
+      ]
+    },
+    "test:integration": {
+      "name": "test:integration",
+      "description": "Both integration tiers, as CI runs them. Needs GCP credentials.",
+      "steps": [
+        {
+          "spawn": "test:integration:preview"
+        },
+        {
+          "spawn": "test:integration:deploy"
+        }
+      ]
+    },
+    "test:integration:deploy": {
+      "name": "test:integration:deploy",
+      "description": "Integration tier B: deploys to the sandbox, asserts, destroys",
+      "steps": [
+        {
+          "spawn": "compile:fixtures"
+        },
+        {
+          "exec": "vitest run --dir test-integration/deploy",
+          "receiveArgs": true
+        }
+      ]
+    },
+    "test:integration:preview": {
+      "name": "test:integration:preview",
+      "description": "Integration tier A: pulumi preview against the sandbox; creates nothing",
+      "steps": [
+        {
+          "spawn": "compile:fixtures"
+        },
+        {
+          "exec": "vitest run --dir test-integration/preview",
+          "receiveArgs": true
         }
       ]
     },

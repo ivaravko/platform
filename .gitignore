@@ -37,6 +37,7 @@ jspm_packages/
 /lib
 /dist/
 !/projenrc/tsconfig.json
+test-integration/fixtures/lib/
 !/.github/workflows/security.yml
 !/.npmrc
 !/.oxlintrc.json

@@ -32,7 +32,8 @@
   },
   "include": [
     "src/**/*.ts",
-    "test/**/*.ts"
+    "test/**/*.ts",
+    "test-integration/**/*.ts"
   ],
   "exclude": [
     "node_modules"

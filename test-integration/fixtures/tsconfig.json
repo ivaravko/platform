@@ -1,0 +1,17 @@
+{
+  "//": "Hand-written, not projen-generated. Fixtures are the one tree in this repo that must EMIT JavaScript: Pulumi's ts-node path dies under TypeScript 7, so stack programs are precompiled and Pulumi.yaml declares `typescript: false`. Every other tsconfig here is --noEmit. Settings mirror packages/gcp-components/tsconfig.json so fixtures compile the same way the components they import do; moduleResolution is left unset deliberately, as TypeScript 7 removed node10.",
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023"],
+    "module": "CommonJS",
+    "rootDir": ".",
+    "outDir": "lib",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "sourceMap": false,
+    "declaration": false
+  },
+  "include": ["*/index.ts"],
+  "exclude": ["lib", "node_modules"]
+}

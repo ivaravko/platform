@@ -1,0 +1,6 @@
+{
+  "//": "Not a workspace member and never published. Pulumi resolves a program's entry point by walking up from the compiled program directory; without a package.json here it reaches the repo root, reads `main: lib/index.js`, fails to find it, and warns on every run. This file deliberately declares no `main`: each fixture's Pulumi.yaml already points at its own compiled entry point, and a `main` here could only ever name one of them.",
+  "name": "runway-integration-fixtures",
+  "private": true,
+  "version": "0.0.0"
+}

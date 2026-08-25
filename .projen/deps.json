@@ -1,6 +1,21 @@
 {
   "dependencies": [
     {
+      "name": "@pulumi/gcp",
+      "version": "9.35.1",
+      "type": "build"
+    },
+    {
+      "name": "@pulumi/pulumi",
+      "version": "3.259.0",
+      "type": "build"
+    },
+    {
+      "name": "@runway/gcp-components",
+      "version": "*",
+      "type": "build"
+    },
+    {
       "name": "@types/node",
       "version": "^22",
       "type": "build"
