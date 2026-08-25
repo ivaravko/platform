@@ -224,10 +224,12 @@ The prototype deliberately emitted no infrastructure, because doing so early mea
 **Acceptance criteria**
 - [x] `runway new <name>` emits an `infra/` Pulumi program using `SecureArtifactRepository`,
       `SecureServiceAccount` and `SecureContainerService` — and **no raw `gcp.*` resource**
-- [~] ~~The emitted program is precompiled with `runtime.options.typescript: false`~~ —
-      **no longer needed, and that is the point.** Scaffolded repos pin TypeScript 5, so ts-node
-      loads and `infra/index.ts` runs directly. The criterion assumed the scaffold would inherit the
-      platform's 7; see the finding below.
+- [x] The emitted program is precompiled with `runtime.options.typescript: false`.
+      **I removed this in D5 and D6 put it back — the criterion was right.** The reasoning for
+      dropping it ("TS 5 means ts-node loads") was true and irrelevant: ts-node *loads* fine and
+      then type-checks the whole `@pulumi/gcp` declaration graph on every invocation. Measured at
+      **over two minutes without completing**, on Pulumi's vendored ts-node 7 *and* on a current
+      ts-node 10. Compiled, the same preview finishes in seconds.
 - [x] `@runway/gcp-components` is resolved by the generated repo, by version or `file:` link, and
       which one is a deliberate choice recorded in the template
 - [x] The emitted file tree is asserted exactly, as Tasks 2 and 4 already do
@@ -266,22 +268,22 @@ The prototype deliberately emitted no infrastructure, because doing so early mea
   the rule needs, because a reader checking the claim should not have to squint. The first version of
   that assertion failed on my own comment, which quoted the forbidden string.
 
-### D6: The generated repo's `pulumi preview` succeeds — success criterion 3
+### ✅ D6: The generated repo's `pulumi preview` succeeds — success criterion 3 — DONE
 The premise, finally testable: the repo `runway new` emits actually deploys.
 
 **Acceptance criteria**
-- [ ] `pulumi preview` on a freshly scaffolded repo, against `enduring-badge-506610-u9`, plans
+- [x] `pulumi preview` on a freshly scaffolded repo, against `enduring-badge-506610-u9`, plans
       exactly one Artifact Registry repository, one service account, one Cloud Run service — and
       **nothing public** ([confirm the shape first](plan.md#open-questions), OQ5)
-- [ ] The same preview run with `--policy-pack` reports **zero violations**
-- [ ] `preview` only. `pulumi up` from a generated repo is a separate decision and is not taken here
-- [ ] SPEC.md success criterion 3 marked met, with the evidence recorded
+- [x] The same preview run with `--policy-pack` reports **zero violations**
+- [x] `preview` only. `pulumi up` from a generated repo is a separate decision and is not taken here
+- [x] SPEC.md success criterion 3 marked met, with the evidence recorded
 
 **Verification**
-- [ ] Preview output captured and checked resource by resource, not just by count
-- [ ] A deliberately weakened copy of the generated program fails the policy pack — proving the
+- [x] Preview output captured and checked resource by resource, not just by count
+- [x] A deliberately weakened copy of the generated program fails the policy pack — proving the
       zero-violation result means the rules ran, not that they were absent
-- [ ] Nothing is created: service-account and Cloud Run listings in the sandbox are unchanged
+- [x] Nothing is created: service-account and Cloud Run listings in the sandbox are unchanged
       afterwards, checked per-resource rather than inferred from an empty filter
 
 **Dependencies:** D5, D1
@@ -289,6 +291,29 @@ The premise, finally testable: the repo `runway new` emits actually deploys.
 **Scope:** M
 
 ---
+
+**Findings worth carrying forward**
+- **D5's precompile removal was wrong, and D6 is where that surfaced.** The first preview of a
+  generated repo hung — no output at all, killed at 600s. Cause: Pulumi runs a `.ts` program through
+  ts-node with type checking on, which here means type-checking the entire `@pulumi/gcp` declaration
+  graph every single run. Reproduced on Pulumi's vendored ts-node 7.0.1 **and** on ts-node 10.9.2,
+  so it is not a version problem. Precompiled, the identical preview finishes in seconds. The
+  original criterion was right and is restored.
+- **The TypeScript 5 decision still stands** — it removed the `ERESOLVE`, the `.npmrc`, and the
+  isolated policy-pack install. It simply does not remove the need to precompile, which is a
+  separate cost with a separate cause. Two changes bundled under one justification, and only one of
+  them held.
+- **Criterion 3 was checked resource by resource, not by count.** A count of three would have passed
+  for three repositories. The plan carries exactly one `artifactregistry/repository` (DOCKER,
+  standard, immutable tags), one `serviceaccount/account`, one `cloudrunv2/service` (internal-LB
+  ingress, deletion protection, default URI disabled, running as that account), and **no
+  `ServiceIamMember` of any kind**.
+- **The zero-violation result was proven to mean something.** A weakened copy of the generated
+  program — one raw `gcp.cloudrunv2.Service` appended — fails with two mandatory violations. Without
+  that, "zero violations" is indistinguishable from a pack that loaded no rules, which is exactly
+  the failure D2 caught in D1.
+- Nothing was created: zero Cloud Run services and zero Artifact Registry repositories in the
+  sandbox afterwards, checked per resource type rather than inferred from an empty filter.
 
 ### ✅ Checkpoint: the paved road works end to end
 - [ ] A developer with no GCP knowledge can run `runway new`, and the result plans a private,

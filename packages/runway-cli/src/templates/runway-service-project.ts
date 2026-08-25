@@ -205,13 +205,24 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
     });
 
     // The load-bearing artifact: a worked example of composing all three
-    // components. Runs as TypeScript directly -- on TS 5 ts-node loads, so
-    // there is no precompile step and no `typescript: false`.
+    // components.
+    //
+    // **Precompiled, and `typescript: false` is not optional.** Pulumi runs a
+    // .ts program through ts-node with type checking on, which here means
+    // type-checking the whole @pulumi/gcp declaration graph on every single
+    // invocation -- measured at over two minutes without completing, on both
+    // Pulumi's vendored ts-node 7 and a current ts-node 10. Compiled, the same
+    // preview finishes in seconds.
     new SampleFile(this, "infra/Pulumi.yaml", {
       contents: [
         `name: ${this.name}`,
         `description: Infrastructure for ${this.name}, composed from @runway/gcp-components.`,
-        "runtime: nodejs",
+        "runtime:",
+        "  name: nodejs",
+        "  options:",
+        "    # Pulumi runs the compiled output; see infra/tsconfig.json.",
+        "    typescript: false",
+        "main: lib/index.js",
         "",
       ].join("\n"),
     });
@@ -220,24 +231,31 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
       contents: renderInfra(this.name),
     });
 
-    // infra/ sits outside srcdir, so `compile` never sees it. Without this the
-    // worked example -- the artifact the spec calls load-bearing and says must
-    // be deployable unmodified -- is emitted and never verified: it could be
-    // broken TypeScript and the build would pass.
+    // infra/ sits outside srcdir, so the project's `compile` never sees it.
+    // This gives it its own compile, which both produces what Pulumi runs and
+    // typechecks it -- without this the artifact the spec calls load-bearing
+    // could be broken TypeScript and the build would still pass.
     new JsonFile(this, "infra/tsconfig.json", {
       marker: false,
       obj: {
         extends: "../tsconfig.json",
-        compilerOptions: { noEmit: true, rootDir: ".", types: ["node"] },
-        include: ["**/*.ts"],
+        compilerOptions: {
+          rootDir: ".",
+          outDir: "lib",
+          types: ["node"],
+        },
+        include: ["*.ts"],
+        exclude: ["lib"],
       },
     });
 
-    const typecheck = this.addTask("typecheck", {
-      description: "Typecheck the infra program; compile only covers src",
-      exec: "tsc --noEmit -p infra/tsconfig.json",
+    const compileInfra = this.addTask("compile:infra", {
+      description: "Compile the infra program; Pulumi runs the output, not the source",
+      exec: "tsc -p infra/tsconfig.json",
     });
-    this.testTask.spawn(typecheck);
+    this.compileTask.spawn(compileInfra);
+
+    this.gitignore.exclude("infra/lib/");
 
     new SampleFile(this, "test/index.test.ts", {
       contents: [

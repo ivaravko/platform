@@ -313,8 +313,19 @@ export class SecureContainerService extends pulumi.ComponentResource {
    clean clone with no GCP credentials present. Install precedes `projen`: `.projenrc.ts` imports
    `projen`, so it cannot execute before `node_modules` exists.
 2. `runway new my-service` produces a repo that, unmodified, passes its own `build`, `test`, `lint`.
-3. That generated repo's `pulumi preview` succeeds against a real GCP project and plans exactly:
-   one Artifact Registry repo, one service account, one Cloud Run service — and nothing public.
+3. ~~That generated repo's `pulumi preview` succeeds against a real GCP project~~ **— MET (D6).**
+   Verified against `enduring-badge-506610-u9`, resource by resource rather than by count:
+
+   | Planned | Configuration |
+   |---|---|
+   | 1× `artifactregistry/repository` | `DOCKER`, `STANDARD_REPOSITORY`, `immutableTags: true` |
+   | 1× `serviceaccount/account` | dedicated runtime identity, no roles |
+   | 1× `cloudrunv2/service` | `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER`, `deletionProtection: true`, `defaultUriDisabled: true`, running as that account |
+
+   **Nothing public**: no `ServiceIamMember` of any kind. The same preview with `--policy-pack`
+   reports zero violations, and a deliberately weakened copy — one raw `gcp.cloudrunv2.Service`
+   appended — fails with two mandatory violations, which is what makes the zero-violation result
+   mean the rules ran rather than that they were absent. `preview` only; nothing was created.
 4. Every row in `docs/control-mapping.md` links to a passing named test.
 5. The CrossGuard policy pack fails `pulumi preview` on a stack that declares a raw
    `gcp.cloudrunv2.Service` with `ingress: "INGRESS_TRAFFIC_ALL"` and no justification.

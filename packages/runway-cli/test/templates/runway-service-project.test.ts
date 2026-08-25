@@ -274,21 +274,27 @@ describe("infra program", () => {
     expect(infra()).toMatch(/immutable/i);
   });
 
-  it("is typechecked, because compile only covers src", () => {
-    // Without this the worked example is emitted and never verified.
+  it("is compiled, which both produces what Pulumi runs and typechecks it", () => {
     const tasks = JSON.parse(read(".projen/tasks.json")) as {
       tasks: Record<string, { steps: { exec?: string; spawn?: string }[] }>;
     };
-    const typecheck = tasks.tasks.typecheck.steps.map((s) => s.exec ?? "").join(" ");
-    expect(typecheck).toContain("infra/tsconfig.json");
-    expect(tasks.tasks.test.steps.some((s) => s.spawn === "typecheck")).toBe(true);
+    const compileInfra = tasks.tasks["compile:infra"].steps
+      .map((s) => s.exec ?? "")
+      .join(" ");
+    expect(compileInfra).toContain("infra/tsconfig.json");
+    expect(compileInfra).not.toContain("--noEmit");
+    expect(tasks.tasks.compile.steps.some((s) => s.spawn === "compile:infra")).toBe(true);
   });
 
-  it("runs as TypeScript, with no precompile step to forget", () => {
+  it("runs the compiled output, never the source", () => {
+    // Pulumi runs a .ts program through ts-node with type checking on, which
+    // here means type-checking the whole @pulumi/gcp declaration graph on every
+    // invocation -- measured at over two minutes without completing, on both
+    // Pulumi's vendored ts-node 7 and a current ts-node 10. Compiled, the same
+    // preview finishes in seconds.
     const yaml = read("infra/Pulumi.yaml");
-    expect(yaml).toContain("runtime: nodejs");
-    // typescript: false would require compiled output; on TS 5 ts-node loads.
-    expect(yaml).not.toMatch(/typescript:\s*false/);
+    expect(yaml).toMatch(/typescript:\s*false/);
+    expect(yaml).toMatch(/main:\s*lib\/index\.js/);
   });
 });
 
