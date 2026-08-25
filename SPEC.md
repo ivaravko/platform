@@ -22,12 +22,41 @@ security document.
 
 ## Capability Map
 
-| Module id        | Responsibility                                                             | Depends on       |
-|------------------|----------------------------------------------------------------------------|------------------|
-| `gcp-components` | Pulumi `ComponentResource`s for GCP; secure-by-default, typed args          | —                |
-| `runway-cli`     | projen-based CLI scaffolding a minimal service repo (build, CI, infra)      | `gcp-components` |
+| Module id                  | Responsibility                                                        | Depends on                        |
+|----------------------------|-----------------------------------------------------------------------|-----------------------------------|
+| `gcp-components`           | Pulumi `ComponentResource`s for GCP; secure-by-default, typed args     | —                                 |
+| `runway-cli`               | projen-based CLI scaffolding a minimal service repo (build, CI, infra) | `gcp-components`                  |
+| `environment-provisioning` | Adopts two existing GCP projects as a service's staging and production environments: provisions the WIF pool, state bucket, and the IAM that grants CI production deploys and denies them to humans. Once per service. | —              |
+| `service-stacks`           | Environment-aware `infra/` in the scaffold: `staging` and `production` Pulumi stacks composing gcp-components | `gcp-components`, `environment-provisioning` |
+| `release-path`             | `runway deploy --env staging` from localhost; production only from CI over WIF, promoting the digest staging verified | `service-stacks`, `runway-cli`    |
 
-**Build order:** `gcp-components` → `runway-cli`
+**Build order:** `gcp-components` → `runway-cli` → `environment-provisioning` → `service-stacks` → `release-path`
+
+### The two-environment modules
+
+`environment-provisioning` leads its group because the other two cannot be *verified* without a real
+project, a real state bucket, and real IAM to fail against. It is also the module that could be
+replaced wholesale — by Terraform, or by a documented console runbook — without rewriting the other
+two. That replaceability is the test for whether a boundary is real rather than decorative.
+
+`release-path` is one module, not two, although it spans localhost and CI. Permission and refusal
+are a single rule seen from both sides: production is deployable precisely by the identity that
+localhost does not have. Splitting them would put half a contract in each spec.
+
+**Two planes, two actors.** The three modules above assume a separation the earlier map did not:
+
+```
+provisioning plane   once per service, org-level rights
+  projects · WIF pool · state bucket · IAM denials
+        ↓ emits config the service repo consumes
+deploy plane         every commit, scoped rights
+  Cloud Run · image · revision
+```
+
+**Prerequisites, recorded rather than discovered later.** `service-stacks` needs a deployable stack,
+and today there is none: `infra/` is not generated (cut deliberately in the runway-cli prototype),
+and `SecureServiceAccount` and `SecureArtifactRepository` have no spec and no plan. Nothing in this
+repo has ever deployed; [open question 3](#open-questions) still gates any real `pulumi preview`.
 
 `runway-cli` is only worth shipping if the repo it emits actually deploys. Building
 `gcp-components` first makes "scaffold a repo, `pulumi preview` succeeds against real components"
