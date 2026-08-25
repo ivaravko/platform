@@ -265,7 +265,7 @@ never fires and the pack dies on `ts.sys.readFile`. Verified both ways against a
 pack fails to load from inside this monorepo, and loads and enforces correctly when installed into a
 tree without TypeScript. A consumer whose repo pins TypeScript 7 will hit the same wall.
 
-**Verified end to end** against `project-4da1a7fd-3681-4524-853`: a stack of two
+**Verified end to end** against `enduring-badge-506610-u9`: a stack of two
 `SecureContainerService` instances planned six resources and passed with zero violations, and a
 stack of four raw `gcp.cloudrunv2.Service` resources failed `pulumi preview` with four mandatory
 violations — including a service carrying a forged `runway-public: "true"` label, which bought it

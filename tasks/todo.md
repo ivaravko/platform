@@ -469,9 +469,13 @@ than no doc, because it reads as proof.
 
 ### ✅ Integration run — SPEC.md OQ3 resolved, C4 and C7 gaps closed
 
-Not a planned task. Ran once `project-4da1a7fd-3681-4524-853` was designated for `pulumi preview`,
-to close the two criteria C4 and C7 could not meet offline. **`preview` only — nothing was created,
-and a local file backend was used so no state reached Pulumi Cloud.**
+Not a planned task. Ran to close the two criteria C4 and C7 could not meet offline, against
+**`enduring-badge-506610-u9`** (project number `741165637912`) — empty before and after, zero
+service accounts, no APIs enabled. **`preview` only — nothing was created, and a local file backend
+was used so no state reached Pulumi Cloud.**
+
+An earlier pass used `project-4da1a7fd-3681-4524-853`, which turned out to hold live workloads;
+every result below was re-established against the empty project and that one should not be reused.
 
 - [x] **C4's failing-`Output` path** fails a real preview with the component's own message, verbatim
       including the corrective action. Untestable under vitest; trivial here, because the engine
@@ -491,13 +495,11 @@ and a local file backend was used so no state reached Pulumi Cloud.**
   from anywhere inside this monorepo**, because TypeScript 7 resolves from the root; installed into
   a tree without TypeScript it loads and enforces correctly. That makes distribution a correctness
   constraint and it is now recorded in both specs.
-- The default-compute-SA hint fires correctly on the project's **real** identity
-  (`966948097214-compute@…`), and a real user-managed account is accepted. An earlier check used a
-  project *id* rather than a project *number*, which is not the real format — the positive rule
-  rejected it anyway, on the generic branch. Exactly the intended design: the hint list is cosmetic,
-  the positive rule is the boundary.
-- The sandbox **is not empty** and its Cloud Run Admin API is **not enabled**. `preview` needs
-  neither; `up` would need both considered.
+- The default-compute-SA hint fires with its **specific** message on a real project-number identity
+  (`741165637912-compute@developer.gserviceaccount.com`). An earlier attempt used a project *id*,
+  which is not the real format, and fell to the generic branch — still rejected. That is the design
+  working: the hint list only shapes the message, the positive rule is the boundary.
+- `preview` needs no APIs enabled; `up` would need `run.googleapis.com` and is a separate decision.
 
 ---
 

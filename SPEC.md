@@ -326,15 +326,17 @@ export class SecureContainerService extends pulumi.ComponentResource {
    into Storage/Cloud SQL where CIS actually bites.
 2. **Package registry and scope.** `@runway/*` is a placeholder. npm public, GitHub Packages, or
    Artifact Registry npm? This changes CI publish config and the generated repo's `.npmrc`.
-3. ~~**Integration test target.**~~ **RESOLVED — `project-4da1a7fd-3681-4524-853` is designated
-   for `pulumi preview`.** Used for the integration run that closed the C4 and C7 gaps. Nothing was
-   created: only `pulumi preview` was run, against a **local file backend**, so no state reached
-   Pulumi Cloud either. Two things worth recording about it:
-   - **It is not empty.** It holds existing service accounts (`piper-image-builder`,
-     `app-image-builder`, `qwen2vl-image-builder`) and other workloads. "Disposable sandbox" does
-     not describe it, so `pulumi up` there needs its own explicit decision — `preview` does not.
-   - **The Cloud Run Admin API is not enabled on it.** `preview` does not need it; `up` would fail
-     until it is turned on.
+3. ~~**Integration test target.**~~ **RESOLVED — `enduring-badge-506610-u9`** (project number
+   `741165637912`) is the designated integration project. Nothing is created there: only
+   `pulumi preview` is run, against a **local file backend**, so no state reaches Pulumi Cloud
+   either. Confirmed empty before and after the run.
+   - **It is genuinely empty** — zero service accounts, none of the Cloud Run, Artifact Registry,
+     IAM or Binary Authorization APIs enabled. That is what makes it a usable sandbox.
+   - `preview` needs no APIs enabled. **`pulumi up` would need `run.googleapis.com` turned on**, and
+     is a separate decision that has not been taken.
+   - `project-4da1a7fd-3681-4524-853` was briefly used first and should **not** be used again: it
+     holds live workloads and service accounts (`piper-image-builder`, `app-image-builder`,
+     `qwen2vl-image-builder`), so it is not a sandbox in any meaningful sense.
 4. **Binary Authorization.** `deletionProtection: true` is a safe default, but Binary Authorization
    requires an attestor and org-level setup. Default it on and require the attestor arg, or leave
    it opt-in for v1?
