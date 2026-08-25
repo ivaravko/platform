@@ -18,6 +18,8 @@ import * as pulumi from "@pulumi/pulumi";
 export interface CreatedResource {
   readonly type: string;
   readonly name: string;
+  /** The inputs the engine was handed — what a policy rule would actually see. */
+  readonly props: Record<string, unknown>;
 }
 
 /**
@@ -52,7 +54,7 @@ const settled = (): Promise<void> =>
 
 void pulumi.runtime.setMocks({
   newResource: (args: pulumi.runtime.MockResourceArgs) => ({
-    id: (createdResources.push({ type: args.type, name: args.name }), `${args.name}_id`),
+    id: (createdResources.push({ type: args.type, name: args.name, props: args.inputs as Record<string, unknown> }), `${args.name}_id`),
     // Provider-computed outputs the mock must stand in for: with only `inputs`,
     // anything the real provider derives (a Cloud Run service's uri) resolves to
     // undefined and assertions on it would pass for the wrong reason.

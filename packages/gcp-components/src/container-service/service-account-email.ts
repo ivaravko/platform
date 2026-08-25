@@ -48,6 +48,16 @@ const REMEDY =
   "Create a dedicated service account and grant it only the roles this service needs.";
 
 /**
+ * Whether `email` is a user-managed service account.
+ *
+ * The predicate behind {@link assertUserManagedServiceAccount}, exported so the
+ * policy pack applies the identical rule to raw resources. Two implementations
+ * of one control would drift, and the drift would be silent.
+ */
+export const isUserManagedServiceAccount = (email: string): boolean =>
+  USER_MANAGED_SERVICE_ACCOUNT.test(email);
+
+/**
  * Throws unless `email` is a user-managed service account.
  *
  * @param email The address to check.
@@ -55,7 +65,7 @@ const REMEDY =
  *   `<id>@<project>.iam.gserviceaccount.com`.
  */
 export function assertUserManagedServiceAccount(email: string): void {
-  if (USER_MANAGED_SERVICE_ACCOUNT.test(email)) {
+  if (isUserManagedServiceAccount(email)) {
     return;
   }
 

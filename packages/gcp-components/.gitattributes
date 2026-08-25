@@ -11,5 +11,8 @@
 /LICENSE linguist-generated
 /package-lock.json linguist-generated
 /package.json linguist-generated
+/policy/index.js linguist-generated
+/policy/package.json linguist-generated
+/policy/PulumiPolicy.yaml linguist-generated
 /test/tsconfig.json linguist-generated linguist-language=JSON-with-Comments
 /tsconfig.json linguist-generated linguist-language=JSON-with-Comments

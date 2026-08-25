@@ -26,6 +26,11 @@
       "type": "peer"
     },
     {
+      "name": "@pulumi/policy",
+      "version": "1.21.0",
+      "type": "peer"
+    },
+    {
       "name": "@pulumi/pulumi",
       "version": "3.259.0",
       "type": "peer"

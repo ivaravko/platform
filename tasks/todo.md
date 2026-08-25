@@ -356,36 +356,43 @@ Carries **CR-09**. Note the verified type has **no attestor field**: it is
 
 ## Phase C: Enforcement
 
-### C7: CrossGuard policy pack
+### ⚠️ C7: CrossGuard policy pack — DONE, one criterion partially met
 The layer that catches the bypass case: a consumer who declares a raw `gcp.*` resource and skips the
 component entirely. Built with `PolicyPack` + `validateResourceOfType`, `enforcementLevel: "mandatory"`.
 
 **Acceptance criteria**
-- [ ] Rules reject: ingress `INGRESS_TRAFFIC_ALL` with no justification in `description`;
+- [x] Rules reject: ingress `INGRESS_TRAFFIC_ALL` with no justification in `description`;
       `invokerIamDisabled: true`; `template.serviceAccount` absent or not `*.iam.gserviceaccount.com`;
       an `allUsers`/`allAuthenticatedUsers` `roles/run.invoker` binding on a service with no
       justification in `description`; any `breakglassJustification`
-- [ ] **No rule keys on the `runway-public` label** ([plan OQ2](plan.md#open-questions), resolved).
+- [x] **No rule keys on the `runway-public` label** ([plan OQ2](plan.md#open-questions), resolved).
       A label is a self-asserted claim: a raw `gcp.*` resource carrying a hand-written
       `runway-public: "true"` would buy a silent pass with no justification anywhere. Intrinsic
       facts cannot be stripped to evade a rule, because stripping them makes the service private.
-- [ ] A test proves the forged-label bypass is closed: a raw public service **with** the label but
+- [x] A test proves the forged-label bypass is closed: a raw public service **with** the label but
       **without** a justification is still rejected
-- [ ] The absent-serviceAccount rule is present and tested — the API types that field
+- [x] The absent-serviceAccount rule is present and tested — the API types that field
       `Input<string | undefined>`, so omitting it is legal and silently yields the default compute SA
-- [ ] The pack is **precompiled JS** and its `Pulumi.yaml` (or equivalent) sets
+- [x] The pack is **precompiled JS** and its `Pulumi.yaml` (or equivalent) sets
       `runtime.options.typescript: false` — ts-node cannot load under TS 7, so a `.ts` policy pack
       will not run at all ([plan finding 5](plan.md#toolchain-findings-verified-not-assumed))
 
 **Acceptance criteria — stop conditions**
-- [ ] If policy rules cannot be unit-tested under vitest without booting a real stack, **stop and
+- [x] If policy rules cannot be unit-tested under vitest without booting a real stack, **stop and
       report**. Do not weaken a rule to make it testable.
 
 **Verification**
-- [ ] Each rule has a test asserting it fires on the violating resource and stays silent on the
+- [x] Each rule has a test asserting it fires on the violating resource and stays silent on the
       compliant one
-- [ ] A stack using only `SecureContainerService` passes with zero violations
-- [ ] `npm test --workspace @runway/gcp-components -- -t "policy"` passes, offline
+- [~] A stack using only `SecureContainerService` passes with zero violations — **offline for the
+      four resource-scoped rules; the stack-scoped CR-03 rule cannot be checked this way.**
+      `pulumi.runtime.setMocks` supplies no dependency graph, and a Cloud Run service's name is
+      provider-generated rather than an input, so a mocked compliant stack has nothing to correlate
+      a binding against. Running that rule over mocked output reports a violation on a perfectly
+      compliant stack — a fiction, not a finding. Covered instead by explicit dependency fixtures,
+      and end-to-end only by the integration tier ([SPEC.md OQ3](../SPEC.md#open-questions), the
+      sandbox project, is still unanswered).
+- [x] `npm test --workspace @runway/gcp-components -- -t "policy"` passes, offline
 
 **Dependencies:** C5, C6
 **Files:** `packages/gcp-components/policy/index.ts`, `packages/gcp-components/policy/rules/cloud-run.ts`,
@@ -393,6 +400,29 @@ component entirely. Built with `PolicyPack` + `validateResourceOfType`, `enforce
 **Scope:** M
 
 ---
+
+**Findings worth carrying forward**
+- **The stop condition did not trigger.** Rules are plain functions over plain props, so they test
+  with a spy — no engine, no stack, no credentials. `PolicyPack` itself is built by a factory that
+  tests never call, and the policy array is exported separately so the wiring stays assertable.
+- **The offline compliance test earned its keep immediately: it caught a bug that would have made
+  the policy pack unusable.** CR-03 originally correlated a binding to its service by `props.name`.
+  Cloud Run service names are **provider-generated** — an output, not an input — so any stack that
+  lets Pulumi auto-name has nothing to match on, and a fully compliant stack failed its own policy
+  pack. Now resolved through the engine's dependency edges (`propertyDependencies.name`, then
+  `dependencies`), falling back to name only for explicitly-named services, and **failing closed**
+  when nothing links them — otherwise the rule would be evadable by simply not wiring the reference.
+- **`@pulumi/policy@1.21.0` ships a broken type barrel.** `index.d.ts` re-exports
+  `unknownCheckingProxy` and `UnknownValueError` from `./proxy`, whose `.d.ts` is literally
+  `export {};` — the declarations were stripped, though `proxy.js` exports them at runtime.
+  Importing the package root fails `tsc` with TS2305. Fixed by importing `@pulumi/policy/policy`
+  directly. The obvious alternative, `skipLibCheck`, would have stopped checking `@pulumi/pulumi`
+  and `@pulumi/gcp` declarations too — exactly what C2 verified. 1.21.0 is the latest, so there is
+  no fixed release to wait for.
+- `PUBLIC_ACCESS_PREFIX` now lives in its own module, imported by both the component that writes it
+  and the rule that reads it. Two copies would not fail on drift — the guardrail would quietly stop
+  recognising its own output. A contract test asserts the component's emitted description satisfies
+  the rule.
 
 ### C8: docs/control-mapping.md and its completeness test
 The mapping doc, plus the test that stops it drifting from the suite. A doc that has drifted is worse

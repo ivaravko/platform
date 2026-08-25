@@ -1,6 +1,7 @@
 import * as gcp from "@pulumi/gcp";
 import * as pulumi from "@pulumi/pulumi";
 import { TYPE_NAMESPACE } from "../type-namespace";
+import { PUBLIC_ACCESS_PREFIX } from "./public-access-marker";
 import { assertUserManagedServiceAccount } from "./service-account-email";
 
 /** Arguments for {@link SecureContainerService}. */
@@ -173,9 +174,6 @@ export class SecureContainerService extends pulumi.ComponentResource {
     this.registerOutputs({ service: this.service, uri: this.uri, invoker });
   }
 }
-
-/** Prefix on the recorded justification, so the description is self-describing. */
-const PUBLIC_ACCESS_PREFIX = "Public access justified: ";
 
 /** Label key marking a publicly-reachable service. */
 const PUBLIC_LABEL = "runway-public";
