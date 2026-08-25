@@ -68,10 +68,32 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
       eslint: false,
       devDeps: [VITEST, OXLINT, OXLINT_TSGOLINT, `@runway/cli@${runwayCli}`],
 
-      // Out of scope for a service repo: publishing, and the platform's own CI
-      // conventions. The service's CI is generated separately.
-      github: false,
+      // One workflow, running the repo's own `build` task — which chains
+      // compile, test and lint, so a single job gates all three.
+      //
+      // Everything else projen would add is switched off deliberately. Left on,
+      // a TypeScriptProject also emits a release workflow, a dependency-upgrade
+      // workflow, a PR linter, a mergify config and a PR template: five files
+      // nobody asked for, in a scaffold whose whole premise is that every
+      // generated line is one someone must read.
+      github: true,
+      githubOptions: { mergify: false, pullRequestLint: false },
+      pullRequestTemplate: false,
+      depsUpgrade: false,
       release: false,
+
+      workflowNodeVersion: NODE_VERSION,
+      workflowPackageCache: true,
+      buildWorkflowOptions: {
+        // projen defaults to pull_request + workflow_dispatch. With release
+        // off, nothing would then verify main after a merge.
+        workflowTriggers: {
+          pullRequest: {},
+          push: { branches: ["main"] },
+          workflowDispatch: {},
+        },
+      },
+
       licensed: false,
       sampleCode: false,
 

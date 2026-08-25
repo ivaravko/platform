@@ -85,7 +85,10 @@ const cli = new typescript.TypeScriptProject({
   description:
     "Scaffolds a minimal, projen-managed repository for a new GCP service.",
   bin: { runway: "lib/cli.js" },
-  devDeps: [VITEST, VITEST_COVERAGE],
+  // yaml is test-only: the CI-workflow tests parse the emitted workflow rather
+  // than string-matching it, so a malformed file fails rather than slipping
+  // through. Caret range, per SPEC.md: exact pins are for @pulumi/* only.
+  devDeps: [VITEST, VITEST_COVERAGE, "yaml@^2.9.0"],
   tsconfig: { compilerOptions: { ...LANGUAGE_LEVEL } },
 });
 

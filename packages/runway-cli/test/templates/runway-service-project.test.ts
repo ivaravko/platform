@@ -59,6 +59,9 @@ describe("scaffold file tree", () => {
   it("emits exactly the expected files and nothing else", () => {
     expect(tree).toEqual([
       ".gitattributes",
+      // The only file projen's GitHub integration is allowed to add; the
+      // release, upgrade, PR-lint, mergify and PR-template defaults are off.
+      ".github/workflows/build.yml",
       ".gitignore",
       ".npmignore",
       ".oxlintrc.json",

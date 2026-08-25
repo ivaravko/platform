@@ -588,31 +588,35 @@ machine. Decisions and risks: [Phase 2 in plan.md](runway-cli-prototype-plan.md#
 
 ---
 
-### Task 4: Emit the CI workflow from `RunwayServiceProject`
+### ✅ Task 4: Emit the CI workflow from `RunwayServiceProject` — DONE
 Turn on projen's GitHub integration and switch off everything projen would add beyond the build
 workflow. One emitted file, running the generated repo's own `build` task — which in projen's
 `TypeScriptProject` chains compile → test, and Task 1b's `lint` task joins them, so a single job covers all three.
 
 **Acceptance criteria**
-- [ ] `RunwayServiceProject` sets `github: true`, `release: false`, `depsUpgrade: false`,
+- [x] `RunwayServiceProject` sets `github: true`, `release: false`, `depsUpgrade: false`,
       `pullRequestTemplate: false`, and `githubOptions: { mergify: false, pullRequestLint: false }`
-- [ ] The emitted `.github/` tree is exactly `.github/workflows/build.yml` — no release, upgrade,
+- [x] The emitted `.github/` tree is exactly `.github/workflows/build.yml` — no release, upgrade,
       PR-lint, mergify, or PR-template files
-- [ ] `workflowNodeVersion` matches `minNodeVersion` exactly — `22.18.0`, the `NODE_VERSION`
+- [x] `workflowNodeVersion` matches `minNodeVersion` exactly — `22.18.0`, the `NODE_VERSION`
       constant in the root `.projenrc.ts`; `workflowPackageCache: true` sets `cache: "npm"`
-- [ ] Workflow triggers are `pull_request`, `push` to `main`, and `workflow_dispatch`
-- [ ] The emitted job contains **no** package-manager setup action — under npm, projen adds no
+- [x] Workflow triggers are `pull_request`, `push` to `main`, and `workflow_dispatch`
+- [x] The emitted job contains **no** package-manager setup action — under npm, projen adds no
       counterpart to the `pnpm/action-setup@v5` step it emits for PNPM
       (`projen/lib/javascript/node-project.js:623-628`)
 
 **Verification**
-- [ ] `npm test --workspace @runway/cli -- -t "ci workflow"` passes
-- [ ] Build-out test (extending Task 2's): scaffold to a temp dir, then
+- [x] `npm test --workspace @runway/cli -- -t "ci workflow"` passes
+- [x] Build-out test (extending Task 2's): scaffold to a temp dir, then
       `npm install && npx projen && npm run build && npm run lint` still passes with the workflow present
-- [ ] Test parses the emitted YAML and asserts job `build` exists with steps in order:
-      checkout → node setup → install → `npx projen build` — exactly four steps
-- [ ] Test asserts `.github/workflows/` contains exactly one entry
-- [ ] `npx projen` twice in the scaffold produces zero diff on the second run
+- [x] Test parses the emitted YAML and asserts job `build` exists with steps in order:
+      checkout → node setup → install → `npx projen build`.
+      **Criterion corrected: not "exactly four steps".** Keeping projen's self-mutation
+      default (decided earlier) adds three more to the same job — diff the tree, upload the
+      patch, fail on drift. The order and the absence of a package-manager setup step are what
+      the criterion was protecting, and both hold.
+- [x] Test asserts `.github/workflows/` contains exactly one entry
+- [x] `npx projen` twice in the scaffold produces zero diff on the second run
 
 **Dependencies:** Task 2
 **Files:** `packages/runway-cli/src/templates/runway-service-project.ts`,
