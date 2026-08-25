@@ -29,10 +29,25 @@ const PACKAGE_VERSION = "0.1.0";
 const REGISTRY =
   "https://europe-west1-npm.pkg.dev/enduring-badge-506610-u9/runway/";
 
-/** Publishable packages carry a version and a registry; the root carries neither. */
-const publishable = (project: typescript.TypeScriptProject): void => {
+/**
+ * Publishable packages carry a version, a registry, and an allowlist of what
+ * ships. The root carries none of them.
+ *
+ * `files` is an allowlist because projen's .npmignore is a denylist, and npm
+ * ignores .gitignore entirely once .npmignore exists -- so anything a task
+ * leaves on disk that projen never heard of gets published. The policy-pack
+ * test installs a dependency tree into .runway-policy/, which put 20,511 files
+ * and 161MB into the gcp-components tarball. A denylist has to predict that; an
+ * allowlist does not.
+ */
+const publishable = (
+  project: typescript.TypeScriptProject,
+  extraPaths: string[] = [],
+): void => {
   project.package.addField("version", PACKAGE_VERSION);
   project.package.addField("publishConfig", { registry: REGISTRY });
+  // package.json, README and LICENSE are always included by npm.
+  project.package.addField("files", ["lib", ...extraPaths]);
 };
 
 // Exact pins, per SPEC.md: caret ranges are for dev tooling only. With
@@ -463,7 +478,8 @@ const gcpComponents = new typescript.TypeScriptProject({
   tsconfig: { compilerOptions: { ...LANGUAGE_LEVEL } },
 });
 
-publishable(gcpComponents);
+// policy/ ships: the pack must load from a consumer tree, not only from here.
+publishable(gcpComponents, ["policy"]);
 gcpComponents.testTask.exec("vitest run", { receiveArgs: true });
 addTypecheckTask(gcpComponents, "test/tsconfig.json");
 addLintTasks(gcpComponents);

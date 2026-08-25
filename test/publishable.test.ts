@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -79,6 +80,28 @@ const importedPackages = (pkg: string): string[] => {
   return [...new Set(names)].toSorted();
 };
 
+interface PackResult {
+  readonly files: readonly { readonly path: string }[];
+  readonly unpackedSize: number;
+}
+
+/**
+ * What `npm publish` would actually upload, without uploading it.
+ *
+ * Asked of npm rather than reimplemented, because the rules for combining
+ * `files`, `.npmignore` and npm's own always-include list are npm's to know.
+ */
+const pack = (pkg: string): PackResult => {
+  const out = execFileSync("npm", ["pack", "--dry-run", "--json"], {
+    cwd: join(root, "packages", pkg),
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const [result] = JSON.parse(out) as PackResult[];
+  if (!result) throw new Error(`npm pack reported nothing for ${pkg}`);
+  return result;
+};
+
 describe.each(PACKAGES)("packages/%s", (pkg) => {
   it("declares every package its source imports at runtime", () => {
     // devDependencies deliberately do not count: they are not installed for a
@@ -105,5 +128,21 @@ describe.each(PACKAGES)("packages/%s", (pkg) => {
 
   it("is not private, or it could never publish at all", () => {
     expect(readPackage(pkg).private ?? false).toBe(false);
+  });
+
+  it("packs only build output — no node_modules, coverage, or test scratch", () => {
+    // projen writes .npmignore as a denylist, and npm ignores .gitignore
+    // entirely once .npmignore exists. Anything a task leaves on disk that
+    // projen never heard of therefore ships: the policy-pack test installs a
+    // dependency tree into .runway-policy/, which put 20,511 files and 161MB
+    // into the gcp-components tarball. A `files` allowlist is what fixes it,
+    // and this is what keeps it fixed.
+    const packed = pack(pkg);
+    const strays = packed.files
+      .map((f) => f.path)
+      .filter((path) => /(^|\/)(node_modules|coverage|test|src)\//.test(path));
+
+    expect(strays.slice(0, 5), `stray files in ${pkg}`).toEqual([]);
+    expect(packed.unpackedSize / 1024 / 1024, `${pkg} unpacked MB`).toBeLessThan(5);
   });
 });
