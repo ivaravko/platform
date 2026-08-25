@@ -33,14 +33,26 @@ stays on the paved road instead of drifting off it in month two.
 │  └─ index.test.ts          → One passing test, so the suite is green from commit one
 ├─ infra/
 │  ├─ Pulumi.yaml
-│  └─ index.ts               → Composes gcp-components; no raw gcp.* resources
+│  └─ index.ts               → One SecureContainerService; identity and image from config
 ├─ Dockerfile                → Distroless, non-root, multi-stage
 └─ README.md                 → What this is, how to deploy, where the guardrails live
 ```
 
-`infra/index.ts` is the load-bearing artifact — it is the worked example of composing
-`SecureServiceAccount` + `SecureArtifactRepository` + `SecureContainerService`, and it must be
-deployable unmodified.
+`infra/index.ts` is **the minimum that deploys, not a worked example of composition.** It declares
+one `SecureContainerService` and takes everything that service consumes — the runtime service
+account's email, the image reference, the region — from Pulumi config.
+
+That is a deliberate reversal of an earlier framing, and the reason is lifecycle. A runtime service
+account and an artifact registry are created once and then sit still; a Cloud Run service changes on
+every deploy. Putting all three in the stack a developer redeploys all day means re-planning two
+resources that never move, and it makes the generated repo responsible for identity and registry
+infrastructure it does not own. Both now belong to
+[`environment-provisioning`](SPEC-environment-provisioning.md), which already provisions IAM in
+those projects.
+
+What the scaffold loses is pedagogy: `infra/index.ts` no longer demonstrates composing three
+components. What it gains is that it deploys with the one component that exists, instead of waiting
+on two that do not.
 
 ## Commands
 
@@ -128,8 +140,10 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific additions:
    `npm install && npx projen && npm run build && npm test && npm run lint` — all pass, no edits.
 2. The generated `infra/index.ts` typechecks against real `@runway/gcp-components` types and
    declares zero raw `gcp.*` resources.
-3. `pulumi preview` in the generated repo plans exactly three resource groups — service account,
-   artifact repository, Cloud Run service — with nothing publicly reachable.
+3. `pulumi preview` in the generated repo plans exactly **one** resource group — the Cloud Run
+   service — with nothing publicly reachable. The runtime service account and artifact registry are
+   provisioned by [`environment-provisioning`](SPEC-environment-provisioning.md) and reach the stack
+   as config, because they are created once where the service is redeployed constantly.
 4. Running `npx projen` twice in the generated repo produces zero diff on the second run.
 5. `runway new` into a non-empty directory fails with an actionable message and writes nothing.
 6. `runway doctor` reports missing or mis-versioned node/npm/pulumi/gcloud with a fix instruction.

@@ -26,6 +26,31 @@ production project rather than at bootstrap — see [Staging first](#staging-fir
 runs `pulumi up --stack production` and receives `403 PERMISSION_DENIED` from Google — not from our
 CLI, not from a lint rule, and not from a code review.
 
+### What this module provisions
+
+Everything a service needs that is created **once** and then sits still:
+
+| Resource | Why here and not in the deploy stack |
+|----------|---------------------------------------|
+| The two projects' IAM | The boundary is the point of the module |
+| Workload Identity pool and provider | Created with production, per service |
+| State buckets, per environment | EP-05; the deploy stack cannot own the bucket its own state lives in |
+| **Runtime service account**, per environment | An identity, created once. `SecureContainerService` takes its *email*, so the deploy stack never needs to create it |
+| **Artifact registry** | Created once, pushed to many times. Its lifetime is the service's, not the revision's |
+
+The last two moved here from `service-stacks` deliberately — see
+[SPEC-runway-cli.md](SPEC-runway-cli.md#scaffold-output). A Cloud Run service changes on every
+deploy; an identity and a registry do not. Keeping them in the stack a developer redeploys all day
+means re-planning two resources that never move, and makes the generated repo responsible for
+infrastructure it does not own.
+
+**They may be built with raw `gcp.*` here.** The no-raw-resources rule in
+[SPEC-runway-cli.md](SPEC-runway-cli.md#boundaries) governs the *generated* `infra/index.ts`, which
+is code a team reads and copies. This module is platform-owned and read by nobody outside it. When
+`SecureServiceAccount` and `SecureArtifactRepository` are eventually built they should be adopted
+here — but their absence no longer blocks anything, which is the point of the move. Until then the
+CrossGuard policy pack is what stops a service account key being created.
+
 ### Why this is a module and not a step
 
 The other two modules cannot be *verified* without a real project, a real state bucket, and real IAM
@@ -400,17 +425,19 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 8. Bootstrap **fails with an actionable message** if the org bootstrap-state bucket does not exist,
    printing the `gcloud storage buckets create` command that fixes it. It does not create the bucket
    itself — that is the one resource this module deliberately does not manage.
-9. EP-06 flags a production project granting a human `roles/editor` — proving the check matches
+9. Each environment gets a runtime service account and an artifact registry, and `--print-config`
+   emits their identifiers in the form the generated stack consumes.
+10. EP-06 flags a production project granting a human `roles/editor` — proving the check matches
    permissions, not role names. A name-based check would pass this case while humans could deploy.
-10. The WIF pool and provider live in the service's own production project; no pool is shared
+11. The WIF pool and provider live in the service's own production project; no pool is shared
    between services, and re-bootstrapping over a soft-deleted pool fails with an actionable message
    rather than `ALREADY_EXISTS`.
-11. **Adopting a production project that already grants a human a deploy-capable role fails**, names
+12. **Adopting a production project that already grants a human a deploy-capable role fails**, names
     every offending binding, and changes nothing (EP-06).
-12. No GCP project is created or deleted by any code path in this module.
-13. Bootstrap **succeeds with `--staging-project` alone**, and reports the service as incomplete,
+13. No GCP project is created or deleted by any code path in this module.
+14. Bootstrap **succeeds with `--staging-project` alone**, and reports the service as incomplete,
     naming the controls not yet in force (EP-07).
-14. Adding `--production-project` later provisions production and leaves staging's IAM bindings and
+15. Adding `--production-project` later provisions production and leaves staging's IAM bindings and
     state bucket unchanged — verified by comparing before and after, not by inspection.
 
 ## Open Questions
@@ -432,6 +459,8 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 6. ~~What counts as a "deploy-capable role"?~~ **Resolved: the Cloud Run deploy permissions that
    `roles/run.admin` confers, matched by permission and not by role name.** See
    [What "deploy-capable" means](#what-deploy-capable-means).
-7. **What does this module do about the existing prerequisite gap?** `service-stacks` needs
-   `SecureServiceAccount` and `SecureArtifactRepository`, which have no spec. They are not this
-   module's job, but nothing downstream ships without them.
+7. ~~What does this module do about the existing prerequisite gap?~~ **Resolved: it absorbs it.**
+   The runtime service account and artifact registry move here, so `service-stacks` composes only
+   `SecureContainerService`, which exists. `SecureServiceAccount` and `SecureArtifactRepository`
+   remain worth building — this module should adopt them when they exist — but nothing waits on
+   them now. See [What this module provisions](#what-this-module-provisions).
