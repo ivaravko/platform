@@ -22,12 +22,45 @@ security document.
 
 ## Capability Map
 
-| Module id        | Responsibility                                                             | Depends on       |
-|------------------|----------------------------------------------------------------------------|------------------|
-| `gcp-components` | Pulumi `ComponentResource`s for GCP; secure-by-default, typed args          | —                |
-| `runway-cli`     | projen-based CLI scaffolding a minimal service repo (build, CI, infra)      | `gcp-components` |
+| Module id                  | Responsibility                                                        | Depends on                        |
+|----------------------------|-----------------------------------------------------------------------|-----------------------------------|
+| `gcp-components`           | Pulumi `ComponentResource`s for GCP; secure-by-default, typed args     | —                                 |
+| `runway-cli`               | projen-based CLI scaffolding a minimal service repo (build, CI, infra) | `gcp-components`                  |
+| `environment-provisioning` | Adopts existing GCP projects as a service's environments: provisions the WIF pool, state bucket, and the IAM that grants CI production deploys and denies them to humans. Staging is required; production is added when the team is ready. | —              |
+| `service-stacks`           | Environment-aware `infra/` in the scaffold: `staging` and `production` Pulumi stacks composing gcp-components | `gcp-components`, `environment-provisioning` |
+| `release-path`             | `runway deploy --env staging` from localhost; production only from CI over WIF, promoting the digest staging verified | `service-stacks`, `runway-cli`    |
 
-**Build order:** `gcp-components` → `runway-cli`
+**Build order:** `gcp-components` → `runway-cli` → `environment-provisioning` → `service-stacks` → `release-path`
+
+### The two-environment modules
+
+`environment-provisioning` leads its group because the other two cannot be *verified* without a real
+project, a real state bucket, and real IAM to fail against. It is also the module that could be
+replaced wholesale — by Terraform, or by a documented console runbook — without rewriting the other
+two. That replaceability is the test for whether a boundary is real rather than decorative.
+
+`release-path` is one module, not two, although it spans localhost and CI. Permission and refusal
+are a single rule seen from both sides: production is deployable precisely by the identity that
+localhost does not have. Splitting them would put half a contract in each spec.
+
+**Two planes, two actors.** The three modules above assume a separation the earlier map did not:
+
+```
+provisioning plane   once per service, org-level rights
+  projects · WIF pool · state bucket · IAM denials
+        ↓ emits config the service repo consumes
+deploy plane         every commit, scoped rights
+  Cloud Run · image · revision
+```
+
+**Prerequisites, recorded rather than discovered later.** `service-stacks` needs a deployable stack,
+and today there is none: `infra/` is not generated (cut deliberately in the runway-cli prototype),
+and `SecureServiceAccount` and `SecureArtifactRepository` have no spec and no plan — only
+`SecureContainerService` exists.
+
+What is *no longer* a prerequisite: [open question 3](#open-questions) is resolved, and the controls
+have been deployed to and torn down from real infrastructure. So `service-stacks` is blocked on
+missing components, not on the ability to verify anything against GCP.
 
 `runway-cli` is only worth shipping if the repo it emits actually deploys. Building
 `gcp-components` first makes "scaffold a repo, `pulumi preview` succeeds against real components"
@@ -305,7 +338,12 @@ export class SecureContainerService extends pulumi.ComponentResource {
   user-managed SA keys impossible to create through the library.
 - Emit a component that is public-by-default.
 - Weaken a default to make a test pass.
-- Run `pulumi up` or `pulumi destroy` unattended, or against a project not designated as sandbox.
+- Run `pulumi up` or `pulumi destroy` against a project not designated as sandbox.
+- Run `pulumi up` or `pulumi destroy` unattended — **except** from the `integration` workflow
+  against the designated sandbox `enduring-badge-506610-u9`, which is permitted. Amended
+  2026-08-25 to unblock the integration tier's Tier B; the exception is scoped to that one project
+  and that one workflow, and every other unattended invocation remains forbidden. See
+  [SPEC-integration-tests.md](SPEC-integration-tests.md#boundaries).
 
 ## Success Criteria
 
@@ -355,9 +393,13 @@ export class SecureContainerService extends pulumi.ComponentResource {
      original claim came from a `grep` that returned nothing — which cannot distinguish "no matches"
      from "the command failed", the same absence-versus-nothing-happened trap this repo's tests keep
      catching. Enabled state is now read per-API by exact match.
-   - `preview` needs no APIs enabled at all. `pulumi up` is still a separate decision that has not
-     been taken; billing is active (`billingAccounts/01A131-8B0806-3C46A4`) and the account holds
-     `roles/owner`, so nothing blocks it technically.
+   - `preview` needs no APIs enabled at all. **`pulumi up` was a separate decision, and it has now
+     been taken: approved 2026-08-25**, unattended from the `integration` workflow against this
+     project only. The Never list is amended accordingly. Billing is active
+     (`billingAccounts/01A131-8B0806-3C46A4`) and the account holds `roles/owner`.
+   - **Enabling `iam.googleapis.com`, `cloudresourcemanager.googleapis.com` and
+     `binaryauthorization.googleapis.com` on this project is approved (2026-08-25)** — the
+     Ask-first gate is satisfied. Not yet executed; it is a task in the integration tier's plan.
    - `project-4da1a7fd-3681-4524-853` was briefly used first and should **not** be used again: it
      holds live workloads and service accounts (`piper-image-builder`, `app-image-builder`,
      `qwen2vl-image-builder`), so it is not a sandbox in any meaningful sense.

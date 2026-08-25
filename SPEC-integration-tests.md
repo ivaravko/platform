@@ -90,7 +90,7 @@ accounts (`piper-image-builder`, `app-image-builder`, `qwen2vl-image-builder`).
 ## Scope: Two Tiers
 
 Tier B is the point of this spec, and Tier A is not merely a stepping stone to it — they fail on
-different things. Split because they carry different risk and different approval状態.
+different things. Split because they carry different risk and different approval status.
 
 ### Tier A — `preview` against the sandbox
 
@@ -118,8 +118,21 @@ Reading back **through the API, not through Pulumi state**, is the whole design.
 records what we asked for; the API reports what GCP did. CR-06 is the proof that these differ, and
 a test that reads Pulumi state would have missed it.
 
-**Status: blocked on three decisions, none of which I should take unilaterally.** Listed in Open
-Questions below. Tier B does not get built until they are answered.
+**Status: approved 2026-08-25 and unblocked.** The two decisions it rested on — unattended
+`pulumi up` against the sandbox, and enabling three APIs on that project — are both taken, and
+[SPEC.md](SPEC.md#boundaries)'s Never list is amended to scope the exception to this workflow and
+this project. Tier A and Tier B are now planned together rather than sequentially.
+
+**This tier automates a run that has already been performed once by hand.** Commits `feb337b`
+(*Deploy and verify the controls on real infrastructure*) and `dd5c503` (*Tear down the integration
+deployment, proving CR-06 both ways*) deployed a private and a public service to
+`enduring-badge-506610-u9/europe-west1`, verified CR-01, CR-03, CR-04, CR-07 and CR-08 against the
+live API, and destroyed both. Those commits changed documentation only — no test code exists.
+
+That precedent matters twice over. It de-risks Tier B: the resource shapes are known to deploy, and
+the assertions below are transcriptions of readings already taken, not guesses. And it is the
+argument for automating them — a control verified by hand once is verified on the day someone
+remembered to look, which is the same failure mode as a control with no test at all.
 
 ## Commands
 
@@ -127,7 +140,7 @@ Questions below. Tier B does not get built until they are answered.
 # Tier A — preview only, creates nothing
 npm run test:integration -- --project=preview
 
-# Tier B — deploys, asserts, destroys (gated; see Open Questions)
+# Tier B — deploys, asserts, destroys (approved; sandbox only)
 npm run test:integration -- --project=deploy
 
 # Both, as CI runs them
@@ -244,6 +257,11 @@ to create. A JSON key in a GitHub secret to test that library would be self-refu
 CI authenticates via `google-github-actions/auth` with WIF; a local run uses application-default
 credentials. **No credential is ever written to the repo or to a projen-generated file.**
 
+**This tier consumes a WIF pool; it never provisions one.** Provisioning is EP-03 in
+[SPEC-environment-provisioning.md](SPEC-environment-provisioning.md). Standing up a second pool
+here would duplicate the identity boundary that module exists to own, and two pools with different
+attribute conditions is precisely how a permissive one survives review.
+
 ### Cost and cleanup
 
 Tier A costs nothing. Tier B deploys a scale-to-zero Cloud Run service for the duration of one
@@ -285,10 +303,16 @@ Inherits SPEC.md. Additions and one amendment specific to this tier:
 - Weaken an assertion because a control behaves differently against real GCP than against mocks —
   that divergence is the finding, and it belongs in the mapping's *Known gaps*.
 
-**Amends SPEC.md.** SPEC.md's Never list currently reads: *"Run `pulumi up` or `pulumi destroy`
-unattended, or against a project not designated as sandbox."* Tier B is unattended by construction
-— it is a nightly CI job. **This spec does not take that decision.** It is Open Question 1 below,
-and Tier B is not built until SPEC.md's boundary is amended in the same commit that builds it.
+**Amends SPEC.md — done, 2026-08-25.** SPEC.md's Never list previously read: *"Run `pulumi up` or
+`pulumi destroy` unattended, or against a project not designated as sandbox."* Tier B is unattended
+by construction — it is a nightly CI job — so the rule has been split in two:
+
+- Running against a project other than the designated sandbox stays forbidden, unconditionally.
+- Running unattended is forbidden **except** from the `integration` workflow against
+  `enduring-badge-506610-u9`.
+
+The exception is deliberately narrow: one workflow, one project. It is not a general licence to
+automate `pulumi up`, and any other unattended invocation still violates SPEC.md.
 
 ## Success Criteria
 
@@ -301,7 +325,7 @@ and Tier B is not built until SPEC.md's boundary is amended in the same commit t
 - [ ] A deliberately bumped `@pulumi/gcp` minor that changes a resource shape fails this tier.
 - [ ] `test/ci.test.ts` asserts the workflow does not trigger on `pull_request`.
 
-**Tier B** (gated on Open Questions)
+**Tier B**
 - [ ] CR-01 verified as *enforced*: a service planned as internal-only is not reachable publicly.
 - [ ] CR-06's provider-vs-API divergence is asserted, so a provider change that closes it fails
       the suite and forces the mapping to be updated.
@@ -316,18 +340,25 @@ and Tier B is not built until SPEC.md's boundary is amended in the same commit t
 
 ## Open Questions
 
-1. **`pulumi up` unattended — the blocking one.** SPEC.md forbids it and Tier B requires it.
-   SPEC.md OQ3 records that this decision *"has not been taken"*; billing is active and the account
-   holds `roles/owner`, so nothing blocks it technically. Amend the boundary to permit unattended
-   `up`/`destroy` **against the designated sandbox only**, or keep the prohibition and ship Tier A
-   alone? Tier A alone leaves every enforcement control unverified and closes only one of the two
-   named gaps.
-2. **Enabling three APIs on the sandbox.** Tier B needs `iam`, `cloudresourcemanager`, and
-   `binaryauthorization` enabled. Enabling them is cheap and reversible, but SPEC.md makes any
-   change to a real GCP project an Ask-first, and enabling `binaryauthorization` in particular
-   interacts with OQ4, which is still open.
-3. **WIF setup is a prerequisite I cannot complete alone.** The pool, provider, and repo binding
-   need someone with org-level access. Confirm who does it, or agree Tier A runs on
-   `workflow_dispatch` with a local credential until WIF exists.
+1. ~~**`pulumi up` unattended.**~~ **RESOLVED 2026-08-25 — approved, sandbox only.**
+   [SPEC.md](SPEC.md#boundaries)'s Never list is amended: unattended `up`/`destroy` is permitted
+   from the `integration` workflow against `enduring-badge-506610-u9`, and forbidden everywhere
+   else. Tier B is unblocked.
+2. ~~**Enabling three APIs on the sandbox.**~~ **RESOLVED 2026-08-25 — approved.**
+   `iam.googleapis.com`, `cloudresourcemanager.googleapis.com` and
+   `binaryauthorization.googleapis.com` may be enabled on the sandbox. The Ask-first gate is
+   satisfied; enabling them is a task in the plan, not yet executed. Note this partly pre-empts
+   [SPEC.md OQ4](SPEC.md#open-questions) (Binary Authorization defaults) — enabling the API does
+   not decide whether BinAuthz defaults on, and OQ4 stays open.
+3. ~~**WIF setup — who performs it.**~~ **RESOLVED by the capability map, not by a decision.**
+   [SPEC-environment-provisioning.md](SPEC-environment-provisioning.md) now owns WIF provisioning
+   as control **EP-03** — *"CI authenticates by Workload Identity Federation; no service account
+   key is created, ever"* — and that module entered the map after this spec was drafted. This tier
+   therefore **consumes** the pool rather than provisioning one, and must not create its own.
+
+   What remains is ordering, not ownership: `environment-provisioning` is unbuilt, so until it
+   ships, the `integration` workflow runs on `workflow_dispatch` with a local credential. Confirm
+   that interim is acceptable, or hold CI wiring until EP-03 lands. **Neither tier is blocked
+   locally** — both run today against application-default credentials.
 4. **Ten green nights is a guess.** It is a stand-in for "stable enough to trust". If pre-release
    is the only moment this tier's verdict is acted on, a shorter bar is defensible.
