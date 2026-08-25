@@ -64,6 +64,7 @@ describe("scaffold file tree", () => {
       ".github/workflows/build.yml",
       ".gitignore",
       ".npmignore",
+      ".npmrc",
       ".oxlintrc.json",
       ".projen/deps.json",
       ".projen/files.json",
@@ -82,10 +83,6 @@ describe("scaffold file tree", () => {
       "test/tsconfig.json",
       "tsconfig.json",
     ]);
-  });
-
-  it("emits no .npmrc — legacy-peer-deps is a platform cost, not the user's", () => {
-    expect(tree).not.toContain(".npmrc");
   });
 
   it("carries no TODO or FIXME markers", () => {
@@ -299,18 +296,19 @@ describe("infra program", () => {
 });
 
 describe("scaffold toolchain", () => {
-  it("pins TypeScript 5, not the platform's 7", () => {
-    // On 7 the @pulumi/* peer range forces legacy-peer-deps on every generated
-    // repo, plus a precompile step and an isolated policy-pack install. The
-    // platform absorbs its own decisions; a service team should not.
+  it("pins TypeScript 7, matching the platform", () => {
     const pkg = JSON.parse(read("package.json")) as {
       devDependencies: Record<string, string>;
     };
-    expect(Number.parseInt(pkg.devDependencies.typescript, 10)).toBeLessThan(7);
+    expect(pkg.devDependencies.typescript).toBe("7.0.2");
   });
 
-  it("still emits no .npmrc, because on TypeScript 5 it needs none", () => {
-    expect(tree).not.toContain(".npmrc");
+  it("ships .npmrc, because @pulumi/* peer-caps TypeScript below 7", () => {
+    // The cost of matching the platform's compiler: npm refuses to resolve
+    // @pulumi/pulumi against TypeScript 7 without this, so a generated repo
+    // cannot install at all. Peer checking is disabled repo-wide as a result.
+    expect(tree).toContain(".npmrc");
+    expect(read(".npmrc")).toContain("legacy-peer-deps=true");
   });
 
   it("depends on the components package", () => {

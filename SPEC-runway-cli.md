@@ -39,15 +39,22 @@ stays on the paved road instead of drifting off it in month two.
 └─ README.md                 → What this is, how to deploy, where the guardrails live
 ```
 
-**Scaffolded repos pin TypeScript 5, not the platform's 7.** The platform pins 7 and pays for it:
-ts-node cannot load, ESLint is unusable, and `@pulumi/*` peer-caps TypeScript at `<7` so every
-install needs `legacy-peer-deps`. A scaffolded repo composes those same components, so pinning 7
-here would transfer all of it to a service team that never made the choice — an `.npmrc` disabling
-peer checks repo-wide, a precompile step for the Pulumi program, and an isolated install before the
-policy pack could run. Measured: adding `@runway/gcp-components` to a TypeScript 7 scaffold fails
-`ERESOLVE`. On 5 none of that exists, `infra/index.ts` runs directly through ts-node, and the
-divergence in compiler version is the price — paid by the platform, which is where the decision was
-made.
+**Scaffolded repos pin TypeScript 7, matching the platform.** This reverses an earlier decision to
+pin 5. The argument for 5 was that a service team should not inherit choices the platform made for
+itself; the argument for 7, which won, is that one compiler across platform and scaffold is one set
+of behaviours to understand — and a generated repo that compiles differently from the components it
+consumes is its own kind of surprise.
+
+The price is paid in the user's repo. `@pulumi/*` peer-caps TypeScript at `<7`, so a generated repo
+ships an `.npmrc` with `legacy-peer-deps=true` and cannot install without it — measured, not
+assumed: adding `@runway/gcp-components` to a TypeScript 7 scaffold fails `ERESOLVE`. That disables
+peer checking repo-wide in a repository the platform does not own, and the `@pulumi/*` pins are what
+compensate.
+
+Two costs the earlier decision cited have since been paid regardless. `infra/` is precompiled with
+`typescript: false`, because Pulumi runs stack programs through ts-node and ts-node cannot load
+TypeScript 7. And the generated projenrc already runs on Node's own type stripping. Neither is a
+consequence of this change.
 
 **`infra/` is typechecked separately, and that is not incidental.** It sits outside `srcdir`, so the
 project's `compile` never sees it. Without `infra/tsconfig.json` and the `typecheck` task the
