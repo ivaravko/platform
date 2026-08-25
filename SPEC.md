@@ -1,7 +1,8 @@
 # Spec: Platform
 
 Initiative-level spec. Defines shared toolchain, conventions, and the capability map.
-Per-module specs: [SPEC-gcp-components.md](SPEC-gcp-components.md), [SPEC-runway-cli.md](SPEC-runway-cli.md).
+Per-module specs: [SPEC-gcp-components.md](SPEC-gcp-components.md), [SPEC-runway-cli.md](SPEC-runway-cli.md),
+[SPEC-environment-provisioning.md](SPEC-environment-provisioning.md), [SPEC-service-stacks.md](SPEC-service-stacks.md).
 
 ## Objective
 
@@ -26,8 +27,8 @@ security document.
 |----------------------------|-----------------------------------------------------------------------|-----------------------------------|
 | `gcp-components`           | Pulumi `ComponentResource`s for GCP; secure-by-default, typed args     | —                                 |
 | `runway-cli`               | projen-based CLI scaffolding a minimal service repo (build, CI, infra) | `gcp-components`                  |
-| `environment-provisioning` | Adopts existing GCP projects as a service's environments: provisions the WIF pool, state bucket, and the IAM that grants CI production deploys and denies them to humans. Staging is required; production is added when the team is ready. | —              |
-| `service-stacks`           | Environment-aware `infra/` in the scaffold: `staging` and `production` Pulumi stacks composing gcp-components | `gcp-components`, `environment-provisioning` |
+| [`environment-provisioning`](SPEC-environment-provisioning.md) | Adopts existing GCP projects as a service's environments: provisions the WIF pool, state buckets, CI deployer identity, and the IAM that grants CI production deploys and denies them to humans. Staging is required; production is added when the team is ready. | —              |
+| [`service-stacks`](SPEC-service-stacks.md) | Environment-aware `infra/` in the scaffold: one program, `staging` and `production` stacks differing only in config | `gcp-components`, `environment-provisioning` |
 | `release-path`             | `runway deploy --env staging` from localhost; production only from CI over WIF, promoting the digest staging verified | `service-stacks`, `runway-cli`    |
 
 **Build order:** `gcp-components` → `runway-cli` → `environment-provisioning` → `service-stacks` → `release-path`
@@ -46,21 +47,31 @@ localhost does not have. Splitting them would put half a contract in each spec.
 **Two planes, two actors.** The three modules above assume a separation the earlier map did not:
 
 ```
-provisioning plane   once per service, org-level rights
-  projects · WIF pool · state bucket · IAM denials
+provisioning plane   once per service, project-level IAM rights
+  projects · WIF pool · state buckets · IAM denials
+  CI deployer service account
         ↓ emits config the service repo consumes
 deploy plane         every commit, scoped rights
-  Cloud Run · image · revision
+  runtime service account · artifact registry · Cloud Run service
 ```
 
-**Prerequisites, recorded rather than discovered later.** `service-stacks` needs a deployable stack,
-and today there is none: `infra/` is not generated (cut deliberately in the runway-cli prototype),
-and `SecureServiceAccount` and `SecureArtifactRepository` have no spec and no plan — only
-`SecureContainerService` exists.
+**The split is by ownership, not by lifecycle.** A lifecycle split was tried — everything created
+once above, everything that changes below — and it put the runtime service account and the artifact
+registry in the provisioning plane. The type says otherwise: `SecureContainerService` takes
+`serviceAccount: SecureServiceAccount`, a component reference the stack must construct, and that
+typed argument is what makes the default compute service account unreachable. So the line is drawn
+where responsibility is: the platform owns the boundary and the identity that crosses it; the
+service owns its own runtime identity, its registry, and its revisions.
 
-What is *no longer* a prerequisite: [open question 3](#open-questions) is resolved, and the controls
-have been deployed to and torn down from real infrastructure. So `service-stacks` is blocked on
-missing components, not on the ability to verify anything against GCP.
+**The prerequisites are closing, on a branch.** `SecureServiceAccount` and
+`SecureArtifactRepository` are built, `SecureContainerService` now takes the typed
+`SecureServiceAccount`, and the scaffold emits an `infra/` composing all three — all on
+`d6-generated-preview`, unmerged at the time of writing. [Open question 3](#open-questions) is
+resolved and the controls have been deployed to and torn down from real infrastructure.
+
+So `service-stacks` is not blocked on missing components. It is blocked on that branch landing, and
+on reconciling it with the two-environment work, which was specified in parallel and without
+knowledge of it.
 
 `runway-cli` is only worth shipping if the repo it emits actually deploys. Building
 `gcp-components` first makes "scaffold a repo, `pulumi preview` succeeds against real components"

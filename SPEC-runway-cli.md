@@ -58,6 +58,15 @@ build would pass. Wiring it up immediately caught TS2742 on the exported stack o
 `SecureServiceAccount` + `SecureArtifactRepository` + `SecureContainerService`, and it must be
 deployable unmodified.
 
+**This was briefly reframed as "the minimum that deploys" and the reframing was wrong.** The argument
+was lifecycle: an identity and a registry are created once, a Cloud Run service changes every
+deploy, so the first two belong in the provisioning plane and the stack should take an email and an
+image from config. That reasoning is sound in the abstract and lost to a fact about the type.
+`SecureContainerService` takes `serviceAccount: SecureServiceAccount` — a component reference, not
+an email string. A stack cannot supply one from configuration; it has to construct it. The typed
+argument is what makes the default compute service account unreachable, which is the guarantee the
+component exists to give, so the type wins and the stack composes all three.
+
 ## Commands
 
 **Developing the CLI:**

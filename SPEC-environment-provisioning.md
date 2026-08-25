@@ -26,6 +26,27 @@ production project rather than at bootstrap — see [Staging first](#staging-fir
 runs `pulumi up --stack production` and receives `403 PERMISSION_DENIED` from Google — not from our
 CLI, not from a lint rule, and not from a code review.
 
+### What this module provisions
+
+Everything a service needs that is created **once** and then sits still:
+
+| Resource | Why here |
+|----------|----------|
+| The two projects' IAM | The boundary is the point of the module |
+| Workload Identity pool and provider | Created with production, per service |
+| State buckets, per environment | EP-05; the deploy stack cannot own the bucket its own state lives in |
+| The CI deployer service account | The identity production grants and localhost does not |
+
+**Not here: the service's runtime identity or its artifact registry.** Those are the deploy stack's,
+because `SecureContainerService` takes `serviceAccount: SecureServiceAccount` — a component
+reference rather than an email — so the stack must construct one. Both were briefly moved into this
+module on a lifecycle argument; the typed argument makes that impossible, and the type is load
+bearing: it is what puts the default compute service account out of reach.
+
+Note the distinction that survives: this module provisions the **CI deployer** service account, the
+one that crosses the production boundary. The service's **runtime** identity is a different account
+with a different job, and it belongs with the service.
+
 ### Why this is a module and not a step
 
 The other two modules cannot be *verified* without a real project, a real state bucket, and real IAM
@@ -432,6 +453,8 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 6. ~~What counts as a "deploy-capable role"?~~ **Resolved: the Cloud Run deploy permissions that
    `roles/run.admin` confers, matched by permission and not by role name.** See
    [What "deploy-capable" means](#what-deploy-capable-means).
-7. **What does this module do about the existing prerequisite gap?** `service-stacks` needs
-   `SecureServiceAccount` and `SecureArtifactRepository`, which have no spec. They are not this
-   module's job, but nothing downstream ships without them.
+7. ~~What does this module do about the existing prerequisite gap?~~ **Resolved: it absorbs it.**
+   The runtime service account and artifact registry move here, so `service-stacks` composes only
+   `SecureContainerService`, which exists. `SecureServiceAccount` and `SecureArtifactRepository`
+   remain worth building — this module should adopt them when they exist — but nothing waits on
+   them now. See [What this module provisions](#what-this-module-provisions).
