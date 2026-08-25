@@ -347,8 +347,9 @@ Carries **CR-09**. Note the verified type has **no attestor field**: it is
 - [ ] All nine CR-* controls hold, each with a named test
 - [ ] Negative tests exist for every opt-out; no control has only a happy path
 - [ ] `vpcAccess`, CMEK, and IAP are absent from the public surface
-- [ ] **Resolve [plan OQ2](plan.md#open-questions)** before C7 — whether an out-of-band removal of
-      `runway-public` may be allowed to defeat CR-03 decides the policy rule's shape
+- [x] **[plan OQ2](plan.md#open-questions) resolved** — C7's rules key on intrinsic facts
+      (`ingress: ALL`, `allUsers` invoker binding) with a `description` justification as evidence;
+      `runway-public` is demoted to a filtering convenience and is not evidence
 - [ ] Human review
 
 ---
@@ -360,9 +361,16 @@ The layer that catches the bypass case: a consumer who declares a raw `gcp.*` re
 component entirely. Built with `PolicyPack` + `validateResourceOfType`, `enforcementLevel: "mandatory"`.
 
 **Acceptance criteria**
-- [ ] Rules reject: ingress `INGRESS_TRAFFIC_ALL` without a `runway-public` label; `invokerIamDisabled: true`;
-      `template.serviceAccount` absent or not `*.iam.gserviceaccount.com`; an `allUsers`/`allAuthenticatedUsers`
-      `roles/run.invoker` binding on a service with no `runway-public` label; any `breakglassJustification`
+- [ ] Rules reject: ingress `INGRESS_TRAFFIC_ALL` with no justification in `description`;
+      `invokerIamDisabled: true`; `template.serviceAccount` absent or not `*.iam.gserviceaccount.com`;
+      an `allUsers`/`allAuthenticatedUsers` `roles/run.invoker` binding on a service with no
+      justification in `description`; any `breakglassJustification`
+- [ ] **No rule keys on the `runway-public` label** ([plan OQ2](plan.md#open-questions), resolved).
+      A label is a self-asserted claim: a raw `gcp.*` resource carrying a hand-written
+      `runway-public: "true"` would buy a silent pass with no justification anywhere. Intrinsic
+      facts cannot be stripped to evade a rule, because stripping them makes the service private.
+- [ ] A test proves the forged-label bypass is closed: a raw public service **with** the label but
+      **without** a justification is still rejected
 - [ ] The absent-serviceAccount rule is present and tested — the API types that field
       `Input<string | undefined>`, so omitting it is legal and silently yields the default compute SA
 - [ ] The pack is **precompiled JS** and its `Pulumi.yaml` (or equivalent) sets

@@ -153,10 +153,12 @@ Per task, on top of each task's own acceptance criteria:
    ([spec OQ1](../SPEC-secure-container-service.md#open-questions)) v1 ships a runtime check where
    the module spec promised a compile-time one. Tightening before any consumer exists is a one-line
    breaking change; after publication it is a migration. Not blocking C1–C8.
-2. **Can an out-of-band label edit defeat CR-03?** ([spec OQ2](../SPEC-secure-container-service.md#open-questions))
-   `runway-public` is both the filterable signal and the policy pack's evidence of the public path.
-   Removing it by hand leaves a public service invisible to the rule. Decide before C7 fixes the
-   rule's shape.
+2. ~~**Can an out-of-band label edit defeat CR-03?**~~ **RESOLVED — C7's rules key on intrinsic
+   facts.** `ingress: ALL` or an `allUsers` invoker binding, with a non-empty `description`
+   justification as the evidence. Removing the label was the harmless direction; *adding* it to a
+   hand-written raw resource was a silent bypass available to precisely the consumer the policy pack
+   exists to catch. `runway-public` is demoted to a filtering convenience.
+   ([spec OQ2](../SPEC-secure-container-service.md#open-questions))
 3. **Two corrections are owed upstream in [SPEC-gcp-components.md](../SPEC-gcp-components.md)** —
    justification-as-label (impossible) and the Binary Authorization attestor premise (no such
    field). Changing a hardened default is ask-first, so these are proposed, not applied.

@@ -227,8 +227,8 @@ resource and skips the component entirely.
 
 Policy rules in this component's slice, via `validateResourceOfType`:
 
-- `gcp:cloudrunv2/service:Service` with `ingress: "INGRESS_TRAFFIC_ALL"` and no
-  `runway-public` label → **fail** (CR-01, CR-03)
+- `gcp:cloudrunv2/service:Service` with `ingress: "INGRESS_TRAFFIC_ALL"` and no justification in
+  `description` → **fail** (CR-01, CR-03)
 - `gcp:cloudrunv2/service:Service` with `invokerIamDisabled: true` → **fail** (CR-05)
 - `gcp:cloudrunv2/service:Service` whose `template.serviceAccount` is absent or not
   `*.iam.gserviceaccount.com` → **fail** (CR-04). The API types this field
@@ -236,8 +236,25 @@ Policy rules in this component's slice, via `validateResourceOfType`:
   This rule is the only thing standing between a raw resource and that outcome.
 - `gcp:cloudrunv2/serviceIamMember:ServiceIamMember` with `member` in
   `{allUsers, allAuthenticatedUsers}` and `role: "roles/run.invoker"`, where the target service
-  carries no `runway-public` label → **fail** (CR-03)
+  carries no justification in `description` → **fail** (CR-03)
 - `binaryAuthorization.breakglassJustification` set on any service → **fail** (CR-09)
+
+**The rules key on intrinsic facts, not on the `runway-public` label — decided, see
+[Open Questions](#open-questions) 2.** `ingress: ALL` and an `allUsers` invoker binding *are* what
+make a service public: they cannot be stripped to evade a rule, because stripping them makes the
+service private, which is the outcome the control wants. A label cannot carry that weight. It is a
+self-asserted claim, and the consumer the policy pack exists to catch — the one hand-writing a raw
+`gcp.*` resource — can add `labels: { "runway-public": "true" }` in two seconds and buy a silent
+pass with no justification anywhere.
+
+Keying on `description` does not make forgery impossible, and does not pretend to. It makes forgery
+*cost a written justification*, which is the behaviour the control is trying to produce in the first
+place. **`runway-public` remains only a filtering convenience** — it is what makes
+`gcloud run services list --filter` useful, and it is not evidence of anything.
+
+**Scope limit, stated plainly:** CrossGuard runs at `pulumi preview`/`up`. Nothing here detects a
+`gcloud` edit made between deployments. That needs a detective control (Cloud Asset Inventory,
+Security Command Center) and is out of v1 scope.
 
 ## Commands
 
@@ -416,10 +433,14 @@ Inherits [SPEC.md](SPEC.md#boundaries) and
    central design claim and v1 ships a weaker version of it. Tighten it in `SecureServiceAccount`'s
    own slice as a breaking change before any consumer exists, or add an overload and keep both?
    Deciding now is cheap; deciding after publication is not.
-2. **Does `publicAccess` need to survive `gcloud` label edits?** The `runway-public` label is the
-   filterable signal *and* the policy pack's public-path evidence — a consumer who removes it by
-   hand makes the service invisible to CR-03 while it stays public. Move that evidence to an
-   annotation, or accept that out-of-band edits defeat it?
+2. ~~**Does `publicAccess` need to survive `gcloud` label edits?**~~ **RESOLVED.** The rules key on
+   intrinsic facts — `ingress: ALL`, an `allUsers`/`allAuthenticatedUsers` invoker binding — with a
+   non-empty `description` justification as the required evidence. The sharper problem was not the
+   one this question asked: *removing* the label is the harmless direction (the rule fires, and the
+   next `pulumi up` restores it). *Adding* it to a raw resource was the silent bypass, and it was
+   available to exactly the consumer the policy pack targets. `runway-public` is now documented as
+   a filtering convenience and nothing more. See the note under
+   [Hardening Controls](#hardening-controls).
 3. **Does `tasks/plan.md` get rewritten now?** It scopes the current prototype to `runway-cli` only
    and calls `gcp-components` out of scope. This spec inverts that order. Phase 2/3 of the skill is
    a separate gate — flagging rather than assuming.
