@@ -32,7 +32,7 @@ Every URL below returned HTTP 200 when this file was written.
 | CR-03 | No `allUsers` invoker binding without a justification | [Cloud Run: managing access](https://cloud.google.com/run/docs/securing/managing-access) | `SecureContainerService` | `CR-03: …` | `cr03-public-invoker-binding-requires-justification` |
 | CR-04 | Runtime identity is a user-managed service account | [Cloud Run: service identity](https://cloud.google.com/run/docs/securing/service-identity), [IAM: service account best practices](https://cloud.google.com/iam/docs/best-practices-service-accounts) | `assertUserManagedServiceAccount` | `CR-04: …` | `cr04-runtime-service-account-is-user-managed` |
 | CR-05 | `invokerIamDisabled` is never set | [Cloud Run: managing access](https://cloud.google.com/run/docs/securing/managing-access) | `SecureContainerService` | `CR-05: …` | `cr05-invoker-iam-never-disabled` |
-| CR-06 | Deletion protection on unless justified | [Cloud Run: managing services](https://cloud.google.com/run/docs/managing/services) | `SecureContainerService` | `CR-06: …` | — |
+| CR-06 | Deletion protection on unless justified — **IaC path only**, see Known gaps | [Cloud Run: managing services](https://cloud.google.com/run/docs/managing/services) | `SecureContainerService` | `CR-06: …` | — |
 | CR-07 | Default URI resolution disabled when not public | [Cloud Run: restricting ingress](https://cloud.google.com/run/docs/securing/ingress) | `SecureContainerService` | `CR-07: …` | — |
 | CR-08 | The justification is recorded on the resource | [Cloud Run: managing access](https://cloud.google.com/run/docs/securing/managing-access) | `SecureContainerService` | `CR-08: …` | — |
 | CR-09 | Binary Authorization opt-in; breakglass never exposed | [Binary Authorization overview](https://cloud.google.com/binary-authorization/docs/overview), [using breakglass](https://cloud.google.com/binary-authorization/docs/using-breakglass) | `SecureContainerService` | `CR-09: …` | `cr09-binary-authorization-breakglass-forbidden` |
@@ -50,6 +50,11 @@ Every URL below returned HTTP 200 when this file was written.
   in a different way.
 
 ## Known gaps
+
+- **CR-06 guards the IaC path only.** `deletionProtection` is a provider-side field, not a GCP API
+  field: the v2 API returns `null` for a deployed service while Pulumi state records `true`. It
+  blocks `pulumi destroy` and `terraform destroy`; `gcloud run services delete` and the Cloud
+  Console delete the service regardless. Confirmed against a real deployment.
 
 - **The stack-scoped CR-03 rule is not exercised end to end offline.** It resolves a binding to its
   service through the engine's dependency graph, and `pulumi.runtime.setMocks` supplies none. It is

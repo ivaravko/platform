@@ -265,6 +265,23 @@ never fires and the pack dies on `ts.sys.readFile`. Verified both ways against a
 pack fails to load from inside this monorepo, and loads and enforces correctly when installed into a
 tree without TypeScript. A consumer whose repo pins TypeScript 7 will hit the same wall.
 
+**Deployed and verified on real infrastructure** (`enduring-badge-506610-u9`, `europe-west1`).
+Both services reached `Ready=True`, so the hardened defaults do not merely plan — they run:
+
+| Control | Private service | Public service |
+|---|---|---|
+| CR-01 ingress | `internal-and-cloud-load-balancing` | `all` |
+| CR-03 invoker IAM | **no bindings at all** | exactly one `allUsers` → `roles/run.invoker` |
+| CR-04 runtime identity | `runway-api@…iam.gserviceaccount.com` | same |
+| CR-07 default URI | **no URL assigned at all** | URL served, HTTP 200 |
+| CR-08 justification | no description, no label | description verbatim, `runway-public: true` |
+
+**CR-06 is weaker than its name suggests, and this is where that surfaced.** The GCP v2 API returns
+`deletionProtection: null` for both services while Pulumi state records `true`. It is a
+**provider-side field**, not a GCP one: it blocks `pulumi destroy` / `terraform destroy` and nothing
+else. `gcloud run services delete` and the Cloud Console are unaffected. The control is real, but it
+guards the IaC path only — it is not a property of the resource, and the mapping doc says so.
+
 **Verified end to end** against `enduring-badge-506610-u9`: a stack of two
 `SecureContainerService` instances planned six resources and passed with zero violations, and a
 stack of four raw `gcp.cloudrunv2.Service` resources failed `pulumi preview` with four mandatory
