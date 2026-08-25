@@ -391,8 +391,33 @@ export class SecureContainerService extends pulumi.ComponentResource {
    a `Source` column citing CIS where a control genuinely exists and Google's Cloud Run security
    guidance otherwise. Confirm that is acceptable, or defer the mapping doc until v2 widens scope
    into Storage/Cloud SQL where CIS actually bites.
-2. **Package registry and scope.** `@runway/*` is a placeholder. npm public, GitHub Packages, or
-   Artifact Registry npm? This changes CI publish config and the generated repo's `.npmrc`.
+2. ~~**Package registry and scope.**~~ **RESOLVED — Artifact Registry (npm format).** `@runway/*`
+   packages publish to an Artifact Registry npm repository rather than npmjs or GitHub Packages:
+   the same GCP project family as everything else, the same IAM story, and nothing published to a
+   public namespace that cannot be reclaimed.
+
+   **The cost lands in every consuming repo, and it is larger than the other two options.** An
+   Artifact Registry npm repository is authenticated, so a generated repo cannot `npm install`
+   without a GCP credential:
+
+   ```
+   @runway:registry=https://<region>-npm.pkg.dev/<project>/<repo>/
+   //<region>-npm.pkg.dev/<project>/<repo>/:_authToken=<short-lived>
+   ```
+
+   Three consequences to design around rather than discover:
+
+   - **The token is short-lived.** `gcloud auth print-access-token` expires in an hour, so it cannot
+     be committed. The generated `.npmrc` needs a refresh mechanism, and the scaffold currently
+     writes a static `.npmrc` for `legacy-peer-deps`.
+   - **`docker build` needs a credential.** The image installs dependencies, so the build needs a
+     secret mount or a pre-authenticated stage. This makes the Dockerfile harder than it would have
+     been on a public registry — accepted deliberately.
+   - **A developer needs GCP access to build the service at all**, not only to deploy it. On npmjs a
+     new contributor could `npm install` before ever touching GCP.
+
+   Still to settle before anything publishes: which project hosts the repository, and who creates
+   it — this module creates no GCP resources today.
 3. ~~**Integration test target.**~~ **RESOLVED — `enduring-badge-506610-u9`** (project number
    `741165637912`) is the designated integration project. Nothing is created there: only
    `pulumi preview` is run, against a **local file backend**, so no state reaches Pulumi Cloud
