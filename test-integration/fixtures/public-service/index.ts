@@ -19,15 +19,31 @@ import * as pulumi from "@pulumi/pulumi";
 
 const config = new pulumi.Config();
 
+/**
+ * The justification text, exported so the assertions compare against the exact
+ * string this stack asked for rather than a copy that can drift out of step.
+ * CR-08 is about the justification being recorded *verbatim* on the resource.
+ */
+export const JUSTIFICATION =
+  "Integration fixture for CR-02/CR-03/CR-08: exercises the justified-public path.";
+
+/** See the note in the private fixture — CR-06 blocks destroy without this. */
+const releaseForTeardown = config.getBoolean("releaseDeletionProtection") ?? false;
+
 const service = new SecureContainerService("integration-public", {
   location: config.require("location"),
   image: config.require("image"),
   serviceAccountEmail: config.require("serviceAccountEmail"),
-  publicAccess: {
-    justification:
-      "Integration fixture for CR-02/CR-03: exercises the justified-public path.",
-  },
+  publicAccess: { justification: JUSTIFICATION },
+  deletionProtection: releaseForTeardown
+    ? {
+        disableJustification:
+          "Integration fixture teardown: the tier destroys everything it creates.",
+      }
+    : true,
 });
 
 export const serviceName = service.service.name;
 export const isPublic = service.isPublic;
+export const uri = service.uri;
+export const justification = JUSTIFICATION;

@@ -190,6 +190,9 @@
         },
         {
           "spawn": "test:integration:deploy"
+        },
+        {
+          "spawn": "test:integration:verify"
         }
       ]
     },
@@ -201,7 +204,7 @@
           "spawn": "compile:fixtures"
         },
         {
-          "exec": "vitest run --dir test-integration/deploy",
+          "exec": "vitest run --dir test-integration/deploy --no-file-parallelism",
           "receiveArgs": true
         }
       ]
@@ -215,6 +218,16 @@
         },
         {
           "exec": "vitest run --dir test-integration/preview",
+          "receiveArgs": true
+        }
+      ]
+    },
+    "test:integration:verify": {
+      "name": "test:integration:verify",
+      "description": "Assert the sandbox holds nothing after the tiers have run",
+      "steps": [
+        {
+          "exec": "vitest run --dir test-integration/verify",
           "receiveArgs": true
         }
       ]

@@ -17,6 +17,7 @@
     "test:integration": "projen test:integration",
     "test:integration:deploy": "projen test:integration:deploy",
     "test:integration:preview": "projen test:integration:preview",
+    "test:integration:verify": "projen test:integration:verify",
     "typecheck": "projen typecheck",
     "watch": "projen watch",
     "projen": "projen"

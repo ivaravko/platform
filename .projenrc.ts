@@ -268,14 +268,35 @@ const previewTier = root.addTask("test:integration:preview", {
 });
 const deployTier = root.addTask("test:integration:deploy", {
   description: "Integration tier B: deploys to the sandbox, asserts, destroys",
-  exec: "vitest run --dir test-integration/deploy",
+  // Sequential by file. Parallel files would deploy into one project at once,
+  // which makes cost unpredictable and, worse, makes "the sandbox is empty"
+  // unanswerable — a leak and a concurrent test look identical.
+  exec: "vitest run --dir test-integration/deploy --no-file-parallelism",
   receiveArgs: true,
 });
+
+/**
+ * The emptiness check, in its own task and its own directory.
+ *
+ * It cannot live alongside the deploy tests. vitest gives no ordering guarantee
+ * across files, so an emptiness assertion sharing a run with tests that deploy
+ * would be asserting against a moving target — green or red depending on
+ * scheduling, which is the worst possible behaviour for a leak detector.
+ */
+const verifyEmpty = root.addTask("test:integration:verify", {
+  description: "Assert the sandbox holds nothing after the tiers have run",
+  exec: "vitest run --dir test-integration/verify",
+  receiveArgs: true,
+});
+
 const integration = root.addTask("test:integration", {
   description: "Both integration tiers, as CI runs them. Needs GCP credentials.",
 });
 integration.spawn(previewTier);
 integration.spawn(deployTier);
+// Last, and always: a run that leaked is a run that must go red, even when
+// every assertion in it passed.
+integration.spawn(verifyEmpty);
 
 // Both tiers run compiled fixtures, so neither can start without this.
 previewTier.prependSpawn(compileFixtures);

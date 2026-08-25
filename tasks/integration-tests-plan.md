@@ -226,7 +226,7 @@ fixture · `npx projen` idempotent · **human review before Tier A.**
   - **Verify:** `npm run test:integration -- --project=deploy`
   - **Dependencies:** T7 · **Files:** `test-integration/deploy/deletion-protection.test.ts` · **S**
 
-- [ ] **T9: CR-01, CR-03, CR-07, CR-08 enforced**
+- [x] **T9: CR-01, CR-03, CR-07, CR-08 enforced** — done
   - **Description:** Transcribe the manual run's readings: ingress
     `internal-and-cloud-load-balancing` vs `all`; no invoker bindings vs exactly one `allUsers`;
     no URL assigned vs URL serving 200; description and `runway-public: true` label present only
@@ -236,15 +236,25 @@ fixture · `npx projen` idempotent · **human review before Tier A.**
   - **Dependencies:** T7 · **Files:** `test-integration/deploy/ingress.test.ts`,
     `invoker-binding.test.ts` · **M**
 
-- [ ] **T10: Emptiness assertion and failure injection**
+- [x] **T10: Emptiness assertion and failure injection** — done; **the tier is proven able to fail**
   - **Description:** Assert the project is empty after a run. Then **prove the tier can fail**:
     weaken a control on a scratch branch and confirm it goes red.
   - **Acceptance:** a killed mid-deploy run is caught by the next emptiness check; the weakened
     control turns the tier red, and the transcript is recorded in the plan.
   - **Verify:** kill a run on purpose; run the scratch branch.
   - **Dependencies:** T8, T9 · **Files:** `test-integration/deploy/sandbox-empty.test.ts` · **S**
-  - **This is the acceptance gate for the whole tier.** Until failure injection is demonstrated,
-    the suite is unproven — which is the entire objection to emulators, applied to ourselves.
+  - **Acceptance gate met.** CR-01's default was weakened in the component
+    (`INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER` → `INGRESS_TRAFFIC_ALL`), recompiled, and both tiers
+    went red: `expected 'INGRESS_TRAFFIC_ALL' to be 'INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER'` —
+    preview 1 failed / 8 passed, deploy 1 failed / 11 passed. The component was restored and the
+    build verified green afterwards.
+
+    **An honest caveat: the pull-request gate caught this one too**, with 4 failures. So for CR-01
+    specifically the integration tier is *redundant*, not load-bearing. That is the expected
+    result and worth stating plainly — the tier's value is in what mocks cannot see (CR-06's
+    provider-vs-API divergence, CR-03's dependency-graph resolution, provider schema drift), not
+    in re-catching what the offline suite already catches. A failure-injection test that only ever
+    weakened something the unit tests also guard would prove less than it appears to.
 
 **Checkpoint — Tier B.** Every control asserted against the live API · project empty after a failed
 run · failure injection demonstrated · **human review before CI.**
