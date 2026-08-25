@@ -89,3 +89,63 @@ describe("component and policy pack agree", () => {
     expect(hasJustification(description)).toBe(false);
   });
 });
+
+describe("policy pack isolation", () => {
+  /**
+   * The pack cannot run from a tree whose nearest `typescript` is the repo's
+   * TypeScript 7. Each assertion below encodes a failure that was *measured*,
+   * not anticipated — and each failure is silent at the point it happens: the
+   * pack simply never loads, and a stack sails through unenforced.
+   */
+  const packageJson = (): { dependencies?: Record<string, string> } =>
+    JSON.parse(
+      readFileSync(join(root, "policy", "package.json"), "utf-8"),
+    ) as { dependencies?: Record<string, string> };
+
+  const installTask = (): string => {
+    const tasks = JSON.parse(
+      readFileSync(join(root, ".projen", "tasks.json"), "utf-8"),
+    ) as { tasks: Record<string, { steps: { exec?: string }[] }> };
+    return tasks.tasks["policy:install"].steps.map((s) => s.exec ?? "").join(" ");
+  };
+
+  it("pins a TypeScript that actually has a compiler API", () => {
+    const ts = packageJson().dependencies?.typescript;
+    expect(ts).toBeDefined();
+    // TS 7 is the native compiler: it exports `version` and `versionMajorMinor`
+    // and nothing else. ts-node reaches for `ts.sys` and dies.
+    expect(Number.parseInt(ts as string, 10)).toBeLessThan(7);
+  });
+
+  it("does NOT align the pack's TypeScript with the repo's", () => {
+    // The realistic regression: someone tidies the two pins into one. That is
+    // precisely the change that breaks the pack, so it is asserted against.
+    const repoTs = (
+      JSON.parse(readFileSync(join(root, "package.json"), "utf-8")) as {
+        devDependencies: Record<string, string>;
+      }
+    ).devDependencies.typescript;
+    expect(packageJson().dependencies?.typescript).not.toBe(repoTs);
+  });
+
+  it("installs with --install-links, or npm symlinks the package and undoes the isolation", () => {
+    // Without it npm symlinks a local package; Node resolves through the real
+    // path, landing back in the monorepo where TypeScript 7 resolves. Measured:
+    // the symlinked form fails with the same ts.sys.readFile error as no
+    // isolation at all.
+    expect(installTask()).toContain("--install-links");
+  });
+
+  it("installs outside node_modules, which npm ci deletes", () => {
+    const task = installTask();
+    expect(task).toMatch(/--prefix\s+\.runway-policy/);
+    expect(task).not.toMatch(/--prefix\s+node_modules/);
+  });
+
+  it("installs the pack's own Pulumi runtime, not the consumer's", () => {
+    // Resolution starts from @pulumi/pulumi's location, so the runner must live
+    // in the isolated tree too -- otherwise it resolves the consumer's compiler.
+    expect(installTask()).toContain("@pulumi/pulumi@");
+  });
+});
+

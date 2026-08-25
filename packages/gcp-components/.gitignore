@@ -37,4 +37,5 @@ jspm_packages/
 /dist/
 !/policy/PulumiPolicy.yaml
 !/policy/package.json
+.runway-policy/
 !/policy/index.js

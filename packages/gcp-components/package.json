@@ -8,6 +8,7 @@
     "lint": "projen lint",
     "lint:fix": "projen lint:fix",
     "package": "projen package",
+    "policy:install": "projen policy:install",
     "post-compile": "projen post-compile",
     "pre-compile": "projen pre-compile",
     "test": "projen test",

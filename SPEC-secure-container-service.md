@@ -256,14 +256,34 @@ place. **`runway-public` remains only a filtering convenience** — it is what m
 `gcloud` edit made between deployments. That needs a detective control (Cloud Asset Inventory,
 Security Command Center) and is out of v1 scope.
 
-**The pack must be consumed from a tree where `typescript` does not resolve — this is a correctness
-constraint, not packaging detail.** Pulumi's policy-pack runner hardcodes ts-node on
-(`cmd/run-policy-pack/index.js:110`) and ignores `PulumiPolicy.yaml`'s runtime options entirely, so
-`typescript: false` does nothing there. It falls back to a vendored `typescript@3.8.3` only when
-`require("typescript")` throws; TypeScript 7 imports fine but has no compiler API, so the fallback
-never fires and the pack dies on `ts.sys.readFile`. Verified both ways against a real preview: the
-pack fails to load from inside this monorepo, and loads and enforces correctly when installed into a
-tree without TypeScript. A consumer whose repo pins TypeScript 7 will hit the same wall.
+**Running the pack requires an isolated install — a correctness constraint, not packaging detail.**
+Pulumi's policy-pack runner hardcodes ts-node on (`cmd/run-policy-pack/index.js:110`) and ignores
+`PulumiPolicy.yaml`, so `typescript: false` does nothing there. It resolves `typescript` from
+`@pulumi/pulumi`'s location and falls back to its vendored 3.8.3 only if that `require` **throws**.
+TypeScript 7 imports fine but has no compiler API, so the fallback never fires and ts-node dies on
+`ts.sys.readFile`.
+
+**Correction to an earlier statement of this constraint.** C7 recorded it as *"the pack must be
+consumed from a tree where `typescript` does not resolve"*. That was a location-dependent accident —
+true only while the pack happened to sit outside any tree containing TypeScript. The real
+requirement is narrower and more useful: **the nearest resolvable `typescript` must have a compiler
+API.** Measured both ways: an isolated directory *inside* a TypeScript 7 repo fails when it contains
+no TypeScript (resolution walks up and finds 7), and succeeds when it contains TypeScript 5.
+
+`npm run policy:install --workspace @runway/gcp-components` creates that tree. Three properties of it
+are load-bearing, each verified by a failure rather than by reasoning, and each asserted by test
+because the failure mode is silent — the pack simply never loads and the stack goes unenforced:
+
+| Property | Why | What happens without it |
+|---|---|---|
+| Its own `typescript@5.x`, **not** the repo's 7 | The runner needs a compiler API | `ts.sys.readFile` crash |
+| Its own `@pulumi/pulumi` | Resolution starts from *its* location | Finds the consumer's TypeScript 7 |
+| `--install-links` | npm **symlinks** a local package; Node resolves through the real path | Pack lands back in the monorepo, TypeScript 7 again |
+| Outside `node_modules/` | `npm ci` deletes `node_modules` | Works locally, gone in CI |
+
+**Verified end to end against a TypeScript 7 consumer**: a compliant program passes with
+`✅ runway-gcp`, and a raw `gcp.cloudrunv2.Service` with `ingress: ALL` and a forged `runway-public`
+label fails the preview with two mandatory violations.
 
 **Deployed and verified on real infrastructure** (`enduring-badge-506610-u9`, `europe-west1`).
 Both services reached `Ready=True`, so the hardened defaults do not merely plan — they run:

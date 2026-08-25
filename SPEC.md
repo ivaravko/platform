@@ -97,12 +97,12 @@ stack planned six resources with no ts-node involved.
 > imports fine — it simply has no compiler API — so the fallback never fires, and the vendored
 > ts-node then dies on `ts.sys.readFile`.
 >
-> **Consequence, verified both ways:** a policy pack fails to load from anywhere inside this
-> monorepo, because TypeScript 7 is resolvable from the root. Installed into a tree where
-> `typescript` does **not** resolve, the same pack loads and runs correctly — it passed a compliant
-> stack with zero violations and failed a non-compliant one with four mandatory violations. **How
-> the pack is distributed and consumed is therefore a correctness constraint, not packaging
-> detail.** See [SPEC-secure-container-service.md](SPEC-secure-container-service.md#hardening-controls).
+> **Consequence, and the mechanism that resolves it.** The requirement is that the **nearest
+> resolvable `typescript` has a compiler API** — not, as first recorded, that none resolves at all.
+> `npm run policy:install --workspace @runway/gcp-components` builds a tree satisfying that, and its
+> four load-bearing properties are documented and test-asserted in
+> [SPEC-secure-container-service.md](SPEC-secure-container-service.md#hardening-controls). Verified
+> end to end against a TypeScript 7 consumer, in both directions.
 
 Verified alongside: `tsc` 7 typechecks Pulumi components cleanly and vitest drives
 `pulumi.runtime.setMocks()` without issue, so only the ts-node paths are affected.

@@ -16,30 +16,30 @@ D2 and D3 are independent and touch disjoint files — the only safe parallel pa
 
 ## Phase D: Unblock and complete the components
 
-### D1: Make the policy pack runnable where it is actually consumed
+### ✅ D1: Make the policy pack runnable where it is actually consumed — DONE
 The third enforcement layer is currently decorative for every scaffolded repo. `RunwayServiceProject`
 pins `typescript@7.0.2`, and C7 proved the pack cannot load from a tree where `typescript` resolves.
 
 **Acceptance criteria**
-- [ ] A repo produced by `runway new` can run `pulumi preview --policy-pack <pack>` and the pack
+- [x] A repo produced by `runway new` can run `pulumi preview --policy-pack <pack>` and the pack
       **loads and enforces** — demonstrated, not argued
-- [ ] The chosen mechanism is documented in [SPEC-secure-container-service.md](../SPEC-secure-container-service.md#hardening-controls),
+- [x] The chosen mechanism is documented in [SPEC-secure-container-service.md](../SPEC-secure-container-service.md#hardening-controls),
       replacing the current "must be consumed from a tree where `typescript` does not resolve" note
       with whatever is actually true afterwards
-- [ ] A test asserts the property the mechanism depends on, so a future change cannot silently
+- [x] A test asserts the property the mechanism depends on, so a future change cannot silently
       break it — the pack failing to load is invisible until someone audits a stack
 
 **Stop conditions**
-- [ ] If packaging cannot solve it, **stop and report.** The remaining lever is the generated repo's
+- [x] If packaging cannot solve it, **stop and report.** The remaining lever is the generated repo's
       TypeScript version ([plan OQ2](plan.md#open-questions)), which is a decision to surface, not
       to take silently.
-- [ ] Do not weaken or drop a rule to make the pack loadable.
+- [x] Do not weaken or drop a rule to make the pack loadable.
 
 **Verification**
-- [ ] Scaffold a repo to a temp dir, run `pulumi preview --policy-pack` against it, confirm the pack
+- [x] Scaffold a repo to a temp dir, run `pulumi preview --policy-pack` against it, confirm the pack
       appears in the `Policies:` block
-- [ ] A deliberately non-compliant resource in that scaffolded repo fails the preview
-- [ ] Root suite green; no GCP credentials needed for the unit-level part
+- [x] A deliberately non-compliant resource in that scaffolded repo fails the preview
+- [x] Root suite green; no GCP credentials needed for the unit-level part
 
 **Dependencies:** None
 **Files:** `packages/gcp-components/policy/*`, `.projenrc.ts`, `SPEC-secure-container-service.md`,
@@ -47,6 +47,22 @@ a new test asserting the mechanism
 **Scope:** M — carries the phase's only high risk
 
 ---
+
+**Findings worth carrying forward**
+- **C7's statement of the constraint was wrong, and wrong in a misleading direction.** It said the
+  pack must live where `typescript` does not resolve. That held only by accident of location. The
+  real rule: **the nearest resolvable `typescript` must have a compiler API.** An isolated directory
+  *inside* a TS 7 repo fails with no TypeScript in it and succeeds with TypeScript 5 in it — both
+  measured. Corrected in both specs.
+- **`--install-links` is load-bearing.** Without it npm *symlinks* a local package and Node resolves
+  through the real path, putting the pack back inside the monorepo where TS 7 resolves. This failed
+  identically to having no isolation at all, and only showed up because the pack and the consumer
+  were finally in *different* trees — the earlier scratch test had them in one, which could not
+  distinguish the two hypotheses.
+- **Installing inside `node_modules/` does not survive `npm ci`** — measured, wiped. Hence
+  `.runway-policy/`.
+- All four properties are asserted by test and **mutation-tested**: aligning the two TypeScript
+  pins, dropping `--install-links`, and moving the install into `node_modules` each fail the suite.
 
 ### D2: `SecureServiceAccount`
 The second v1 component. Its absence is why C4 shipped a runtime check where the module spec

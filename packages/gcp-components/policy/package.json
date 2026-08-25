@@ -2,5 +2,11 @@
   "name": "runway-gcp-policy",
   "version": "0.0.1",
   "main": "index.js",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "@pulumi/pulumi": "3.259.0",
+    "@pulumi/policy": "1.21.0",
+    "@pulumi/gcp": "9.35.1",
+    "typescript": "5.9.3"
+  }
 }
