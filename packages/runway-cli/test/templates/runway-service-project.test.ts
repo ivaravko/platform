@@ -47,7 +47,7 @@ beforeAll(() => {
   // postSynthesize would run a real `npm install` per synth; the build-out test
   // below does that deliberately, but the fast assertions must not.
   process.env.PROJEN_DISABLE_POST = "true";
-  new RunwayServiceProject({ name: "demo", outdir }).synth();
+  new RunwayServiceProject({ name: "demo", outdir, region: "europe-west1" }).synth();
   tree = treeOf(outdir);
 });
 
@@ -73,6 +73,8 @@ describe("scaffold file tree", () => {
       "README.md",
       // The load-bearing artifact: a worked example composing all three
       // components, with no raw gcp.* resource anywhere in it.
+      "infra/Pulumi.production.yaml",
+      "infra/Pulumi.staging.yaml",
       "infra/Pulumi.yaml",
       "infra/index.ts",
       "infra/tsconfig.json",
@@ -112,7 +114,7 @@ describe("outdir default", () => {
     const previous = process.cwd();
     try {
       process.chdir(dir);
-      new RunwayServiceProject({ name: "defaulted" }).synth();
+      new RunwayServiceProject({ name: "defaulted", region: "europe-west1" }).synth();
       expect(readdirSync(join(dir, "defaulted"))).toContain(".projenrc.ts");
     } finally {
       process.chdir(previous);
@@ -204,7 +206,7 @@ describe("build-out", () => {
     () => {
       const dir = mkdtempSync(join(tmpdir(), "runway-buildout-"));
       try {
-        new RunwayServiceProject({ name: "demo", outdir: dir }).synth();
+        new RunwayServiceProject({ name: "demo", outdir: dir, region: "europe-west1" }).synth();
         // Install precedes projen: .projenrc.ts imports projen and cannot run
         // before node_modules exists.
         for (const [cmd, args] of [
@@ -226,6 +228,29 @@ describe("build-out", () => {
       }
     },
   );
+});
+
+describe("stack configuration", () => {
+  const stackConfig = (env: string): string => read(`infra/Pulumi.${env}.yaml`);
+
+  it.each([
+    ["staging", "demo-staging"],
+    ["production", "demo-production"],
+  ])("%s targets the derived project %s", (env, projectId) => {
+    // Derived, not passed: the scaffold knows the name, so neither a flag nor a
+    // config file has to carry an identifier between two commands.
+    expect(stackConfig(env)).toContain(`gcp:project: ${projectId}`);
+  });
+
+  it.each(["staging", "production"])("%s carries the region", (env) => {
+    // The program requires gcp:region. Without it here, every generated repo
+    // would fail its first preview on config the scaffold could have written.
+    expect(stackConfig(env)).toContain("gcp:region: europe-west1");
+  });
+
+  it("gives the two environments different projects", () => {
+    expect(stackConfig("staging")).not.toEqual(stackConfig("production"));
+  });
 });
 
 describe("infra program", () => {

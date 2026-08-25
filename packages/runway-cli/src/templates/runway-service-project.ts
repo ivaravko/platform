@@ -53,6 +53,15 @@ export interface RunwayServiceProjectOptions {
   readonly outdir?: string;
 
   /**
+   * GCP region for both environments, e.g. "europe-west1".
+   *
+   * Required, because it is the one value the scaffold cannot derive. The
+   * project ids come from the service name; the region does not, and a stack
+   * config missing it produces a repository that cannot preview.
+   */
+  readonly region: string;
+
+  /**
    * How the generated repo resolves `@runway/cli` to regenerate itself.
    *
    * Defaults to a `file:` link at the package that produced the scaffold, which
@@ -128,11 +137,36 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
       readme: { contents: renderReadme(options.name) },
     });
 
+    this.addStackConfig(options.region);
     this.testTask.exec("vitest run", { receiveArgs: true });
     this.addLintTasks();
     this.addOxlintConfig();
     this.addNpmrc();
     this.addSampleCode(runwayCli);
+  }
+
+  /**
+   * One stack config per environment, differing only in the project they target.
+   *
+   * Project ids are derived from the service name — `<name>-staging` and
+   * `<name>-production` — which is the same rule `environment-provisioning`
+   * adopts under. Neither module tells the other an identifier; both compute it.
+   *
+   * These are the values `infra/index.ts` requires. Writing them here is what
+   * makes a generated repo previewable without a configuration step nobody
+   * documented.
+   */
+  private addStackConfig(region: string): void {
+    for (const environment of ["staging", "production"] as const) {
+      new SampleFile(this, `infra/Pulumi.${environment}.yaml`, {
+        contents: [
+          "config:",
+          `  gcp:project: ${this.name}-${environment}`,
+          `  gcp:region: ${region}`,
+          "",
+        ].join("\n"),
+      });
+    }
   }
 
   /** projen has no oxlint component, so the tasks are registered by hand. */

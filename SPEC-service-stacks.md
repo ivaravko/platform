@@ -192,9 +192,9 @@ Module-specific:
 
 1. ~~Where do the two stack config files get their project ids?~~ **Resolved: derived from the
    service name.** See [Project ids are derived, not passed](#project-ids-are-derived-not-passed).
-2. **Does `runway new` create the Pulumi stacks, or only the files?** `pulumi stack init staging`
-   needs the state backend to exist and be reachable, which drags provisioning into scaffold time.
-   Emitting files and letting the first `pulumi up` initialise is the lower-coupling answer.
+2. ~~Does `runway new` create the Pulumi stacks, or only the files?~~ **Resolved: only the files.**
+   `pulumi stack init` needs a reachable state backend, which would let `runway new` fail for
+   reasons unrelated to scaffolding. The first `pulumi up` initialises.
 3. **Is `staging` allowed to be public?** SS-03 says no environment is public without a justified
    opt-out. A team wanting a publicly reachable staging URL is a plausible, reasonable request, and
    the opt-out already exists — worth confirming that it applies per stack rather than per service.

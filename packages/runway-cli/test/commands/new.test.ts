@@ -55,7 +55,7 @@ describe("runNew: name validation", () => {
   });
 
   it("accepts a name at exactly the limit", () => {
-    expect(() => runNew(["a".repeat(19)], cwd)).not.toThrow();
+    expect(() => runNew(["a".repeat(19), "--region", "europe-west1"], cwd)).not.toThrow();
   });
 
   it("explains the project-id rule when a name is too long", () => {
@@ -82,7 +82,7 @@ describe("runNew: name validation", () => {
 
 describe("runNew: target directory", () => {
   it("scaffolds into ./<name>", () => {
-    runNew(["demo"], cwd);
+    runNew(["demo", "--region", "europe-west1"], cwd);
     expect(readdirSync(join(cwd, "demo"))).toContain(".projenrc.ts");
   });
 
@@ -91,7 +91,7 @@ describe("runNew: target directory", () => {
     // wrongly refuse this, and nothing else covers the distinction.
     mkdirSync(join(cwd, "demo"));
 
-    expect(() => runNew(["demo"], cwd)).not.toThrow();
+    expect(() => runNew(["demo", "--region", "europe-west1"], cwd)).not.toThrow();
     expect(readdirSync(join(cwd, "demo"))).toContain(".projenrc.ts");
   });
 
@@ -99,7 +99,7 @@ describe("runNew: target directory", () => {
     mkdirSync(join(cwd, "demo"));
     writeFileSync(join(cwd, "demo", "keep.txt"), "precious\n");
 
-    expect(() => runNew(["demo"], cwd)).toThrow(/not empty/i);
+    expect(() => runNew(["demo", "--region", "europe-west1"], cwd)).toThrow(/not empty/i);
     expect(readdirSync(join(cwd, "demo"))).toEqual(["keep.txt"]);
   });
 });
