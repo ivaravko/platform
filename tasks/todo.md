@@ -300,24 +300,24 @@ The escape hatch, and the auditability that makes it acceptable. Carries **CR-02
   the label with `gcloud` leaves a service that is still public but invisible to CR-03. Deciding
   this shapes C7's rule, and C7 is next after C6.
 
-### C6: Binary Authorization — opt-in
+### ✅ C6: Binary Authorization — opt-in — DONE
 Carries **CR-09**. Note the verified type has **no attestor field**: it is
 `{ useDefault, policy, breakglassJustification }`, which closes
 [SPEC.md OQ4](../SPEC.md#open-questions) on different terms than it was asked.
 
 **Acceptance criteria**
-- [ ] `binaryAuthorization` accepts `{ useDefault: true }` or `{ policy }`, and is **absent by
+- [x] `binaryAuthorization` accepts `{ useDefault: true }` or `{ policy }`, and is **absent by
       default** — `useDefault` fails every deployment in a project with no BinAuthz policy, which is
       not a default a library may impose
-- [ ] `breakglassJustification` is **not exposed through any public API** — it is the documented way
+- [x] `breakglassJustification` is **not exposed through any public API** — it is the documented way
       to bypass the policy this control exists to apply
-- [ ] Omitting the arg emits no `binaryAuthorization` block at all, rather than an empty one
+- [x] Omitting the arg emits no `binaryAuthorization` block at all, rather than an empty one
 
 **Verification**
-- [ ] Test asserts the emitted block for each of the two accepted forms
-- [ ] Test asserts no `binaryAuthorization` key is emitted when the arg is omitted
-- [ ] A type-level or structural test asserts `breakglassJustification` is unreachable from `SecureContainerServiceArgs`
-- [ ] `npm test --workspace @runway/gcp-components -- -t "CR-09"` passes
+- [x] Test asserts the emitted block for each of the two accepted forms
+- [x] Test asserts no `binaryAuthorization` key is emitted when the arg is omitted
+- [x] A type-level or structural test asserts `breakglassJustification` is unreachable from `SecureContainerServiceArgs`
+- [x] `npm test --workspace @runway/gcp-components -- -t "CR-09"` passes
 
 **Dependencies:** C4
 **Files:** `packages/gcp-components/src/container-service/secure-container-service.ts`,
@@ -325,6 +325,23 @@ Carries **CR-09**. Note the verified type has **no attestor field**: it is
 **Scope:** S
 
 ---
+
+**Findings worth carrying forward**
+- **Test files were not typechecked by anything.** `compile` only covers `src`, vitest transpiles
+  without checking types, and nothing else looked — so this task's type-level acceptance criterion
+  would have been **inert**, silently passing whatever it asserted. Each package (and the root,
+  whose `compile` is reset to fan out) now runs `tsc --noEmit` over its test tree as part of `test`.
+  Wiring it up immediately surfaced a bad `as Record<string, unknown>` cast that had been sitting in
+  the C4 tests since they were written.
+- **The `@ts-expect-error` assertion was mutation-tested.** Widening the args type to admit
+  `breakglassJustification` makes `tsc` fail with `TS2578: Unused '@ts-expect-error' directive`.
+  Without that check the directive would look like coverage while asserting nothing — the same
+  class of silent-pass as the C5 negative test.
+- **[SPEC.md Open Question 4](../SPEC.md#open-questions) is closed on different terms than it was
+  asked.** It assumes Binary Authorization "requires an attestor"; the verified
+  `ServiceBinaryAuthorization` type has no attestor field at all. The resource either selects the
+  project default or names a policy by path, and attestors are configured on the policy out of
+  band. The premise was wrong, not the answer.
 
 ### ✅ Checkpoint: Component Complete
 - [ ] All nine CR-* controls hold, each with a named test

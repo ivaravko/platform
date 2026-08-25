@@ -38,6 +38,25 @@ export interface SecureContainerServiceArgs {
   readonly publicAccess?: false | { readonly justification: string };
 
   /**
+   * Binary Authorization. Control CR-09.
+   *
+   * **Opt-in, deliberately.** `useDefault` fails every deployment in a project
+   * that has no Binary Authorization policy configured, so it cannot be a
+   * library default without blocking every consumer who has not set one up.
+   * Omitted, no `binaryAuthorization` block is emitted at all.
+   *
+   * `breakglassJustification` is **not exposed**: it is the documented way to
+   * bypass the policy this control exists to apply.
+   *
+   * Note the Cloud Run v2 API takes no attestor here — attestors are configured
+   * on the policy, out of band. The resource either selects the project default
+   * or names a policy by path.
+   */
+  readonly binaryAuthorization?:
+    | { readonly useDefault: true }
+    | { readonly policy: pulumi.Input<string> };
+
+  /**
    * Allow `pulumi destroy` to delete this service. Opt-out from the hardened
    * default, in the justified form: the reason is required, so every instance
    * is visible in code review and greppable across consuming repos.
@@ -112,6 +131,10 @@ export class SecureContainerService extends pulumi.ComponentResource {
         // anyway, and a disabled default URI only makes it harder to find.
         defaultUriDisabled: !this.isPublic,
         deletionProtection: isDeletionProtected(args.deletionProtection),
+        // Passed straight through. The narrowed union is what keeps
+        // breakglassJustification unreachable: there is no path from the public
+        // args type to that field.
+        binaryAuthorization: args.binaryAuthorization,
         // Free text, so the reason survives verbatim. A label cannot hold it:
         // GCP label values allow only lowercase alphanumerics, "-" and "_", max
         // 63 characters, so any real sentence is rejected by the API.

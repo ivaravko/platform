@@ -96,10 +96,9 @@ describe("SecureContainerService: nothing public leaks in by default", () => {
 
 describe("SecureContainerService: surfaces cut from v1", () => {
   it("emits no vpcAccess or encryptionKey in the template", async () => {
-    const template = (await resolve(defaults("cut-tpl").service.template)) as Record<
-      string,
-      unknown
-    >;
+    // No cast: vpcAccess and encryptionKey are real optional properties of
+    // ServiceTemplate, so asserting they are absent is type-checked too.
+    const template = await resolve(defaults("cut-tpl").service.template);
     expect(template.vpcAccess).toBeUndefined();
     expect(template.encryptionKey).toBeUndefined();
   });

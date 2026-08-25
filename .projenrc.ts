@@ -78,6 +78,25 @@ const cli = new typescript.TypeScriptProject({
 });
 
 /**
+ * Registers a typecheck task covering the test tree.
+ *
+ * `compile` only typechecks `src`, so until this existed a type error in a test
+ * file was invisible to the whole pipeline — vitest transpiles without checking
+ * types, and nothing else looked. Wiring it up immediately surfaced a bad cast
+ * that had been sitting in the C4 tests since they were written.
+ */
+const addTypecheckTask = (
+  project: typescript.TypeScriptProject,
+  tsconfig: string,
+): void => {
+  const typecheck = project.addTask("typecheck", {
+    description: "Typecheck the test tree; compile only covers src",
+    exec: `tsc --noEmit -p ${tsconfig}`,
+  });
+  project.testTask.spawn(typecheck);
+};
+
+/**
  * Registers the lint tasks for a project. projen has no oxlint component, so
  * this is hand-wired.
  *
@@ -105,6 +124,7 @@ const addLintTasks = (project: typescript.TypeScriptProject) => {
 // drops the flag: projen accepts the argument and never forwards it to vitest,
 // so the command reports success having ignored what was asked for.
 cli.testTask.exec("vitest run", { receiveArgs: true });
+addTypecheckTask(cli, "test/tsconfig.json");
 addLintTasks(cli);
 
 // --- root -------------------------------------------------------------------
@@ -119,6 +139,10 @@ root.packageTask.reset();
 // running each package's tests twice.
 root.testTask.reset("vitest run --dir test");
 root.testTask.exec("npm run test --workspaces --if-present");
+// The root's compile is reset to fan out, so its own tsc never runs and its
+// test tree would go unchecked like the packages' did. Root tsconfig already
+// includes test/**.
+addTypecheckTask(root, "tsconfig.json");
 const rootLint = addLintTasks(root);
 // One oxlint pass from the root covers every package, so `npm test` at the top
 // level gates on lint across the whole repo.
@@ -144,6 +168,7 @@ const gcpComponents = new typescript.TypeScriptProject({
 });
 
 gcpComponents.testTask.exec("vitest run", { receiveArgs: true });
+addTypecheckTask(gcpComponents, "test/tsconfig.json");
 addLintTasks(gcpComponents);
 
 /**

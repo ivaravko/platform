@@ -14,6 +14,7 @@
     "post-compile": "projen post-compile",
     "pre-compile": "projen pre-compile",
     "test": "projen test",
+    "typecheck": "projen typecheck",
     "watch": "projen watch",
     "projen": "projen"
   },

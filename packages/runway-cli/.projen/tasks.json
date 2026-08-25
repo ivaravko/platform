@@ -119,6 +119,18 @@
         {
           "exec": "vitest run",
           "receiveArgs": true
+        },
+        {
+          "spawn": "typecheck"
+        }
+      ]
+    },
+    "typecheck": {
+      "name": "typecheck",
+      "description": "Typecheck the test tree; compile only covers src",
+      "steps": [
+        {
+          "exec": "tsc --noEmit -p test/tsconfig.json"
         }
       ]
     },

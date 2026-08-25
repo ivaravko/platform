@@ -169,7 +169,19 @@
           "exec": "npm run test --workspaces --if-present"
         },
         {
+          "spawn": "typecheck"
+        },
+        {
           "spawn": "lint"
+        }
+      ]
+    },
+    "typecheck": {
+      "name": "typecheck",
+      "description": "Typecheck the test tree; compile only covers src",
+      "steps": [
+        {
+          "exec": "tsc --noEmit -p tsconfig.json"
         }
       ]
     },
