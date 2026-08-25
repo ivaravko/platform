@@ -158,7 +158,7 @@ npm test --workspace @runway/cli -- -t "service stacks"
 | Static      | `index.ts` contains no stack-name conditional and no project/region literal (SS-01, SS-05) | Blocking |
 | Digest      | A tag reference in `Pulumi.production.yaml` fails the build (SS-02)               | Blocking |
 | Build-out   | The generated repo compiles `infra/` and `pulumi preview --stack staging` plans three resource groups | Blocking |
-| Integration | `pulumi preview` against the sandbox project, both stacks                         | Blocking before release |
+| Integration | `pulumi preview` against the sandbox project, both stacks — `test-integration/preview/generated-repo.test.ts` | Blocking before release |
 
 The build-out test is the one that matters. Asserting the *files* exist proves we can write YAML;
 running `pulumi preview` proves the program compiles, resolves config, and plans what it should.

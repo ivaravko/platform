@@ -480,7 +480,10 @@ const renderInfra = (name: string): string =>
     "// Starts with no roles at all. Grant what this service needs, one at a",
     "// time; project-wide and administrative roles are rejected outright.",
     'const identity = new SecureServiceAccount("runtime", {',
-    `  accountId: "${name}",`,
+    // Suffixed, not bare: a GCP service account id must be 6-30 characters, and
+    // a short service name like "demo" is only 4. "-runtime" also says what the
+    // identity is for, next to the CI deployer account in the same project.
+    `  accountId: "${name}-runtime",`,
     "  project,",
     "});",
     "",

@@ -316,6 +316,13 @@ describe("infra program", () => {
     expect(infra()).not.toMatch(/serviceAccountEmail/);
   });
 
+  it("suffixes the service account id past GCP's six-character minimum", () => {
+    // Found by a real preview, not by reading: "demo" is 4 characters and the
+    // provider rejects it. The suffix keeps every valid service name -- 1 to 19
+    // characters -- inside the 6-30 the API allows.
+    expect(infra()).toContain('accountId: "demo-runtime"');
+  });
+
   it("prefers a digest over a tag, without branching on stack name", () => {
     // SS-01: the program is identical for both stacks. Preferring a digest when
     // one is configured is a branch on config, not on environment -- production
