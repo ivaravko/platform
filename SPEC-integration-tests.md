@@ -81,11 +81,35 @@ accounts (`piper-image-builder`, `app-image-builder`, `qwen2vl-image-builder`).
 | `run.googleapis.com` | enabled | Tier A, Tier B |
 | `artifactregistry.googleapis.com` | enabled | Tier A, Tier B |
 | `serviceusage.googleapis.com` | enabled | both |
-| `iam.googleapis.com` | **not enabled** | Tier B only |
-| `cloudresourcemanager.googleapis.com` | **not enabled** | Tier B only |
-| `binaryauthorization.googleapis.com` | **not enabled** | Tier B only |
+| `compute.googleapis.com` | **enabled 2026-08-25** | provider region validation — **found during T2** |
+| `iam.googleapis.com` | **enabled** — see below | Tier B |
+| `cloudresourcemanager.googleapis.com` | not enabled | Tier B |
+| `binaryauthorization.googleapis.com` | not enabled | Tier B (CR-09, currently out of scope) |
 
-`pulumi preview` needs no APIs enabled at all, so Tier A is unblocked today.
+`pulumi preview` needs no APIs enabled at all, so Tier A was unblocked before any of this.
+Confirmed by running it: the private fixture planned three resources and exited 0 while
+`compute.googleapis.com` was still disabled.
+
+**`compute.googleapis.com` was a T2 finding, and is now enabled.** The GCP provider probes the
+Compute API to validate regions and warned on every run when it could not:
+
+```
+warning: failed to get regions list: failed to list regions: googleapi: Error 403:
+Compute Engine API has not been used in project enduring-badge-506610-u9 …
+```
+
+That was a *warning*, not an error — `preview` exited 0 and the plan was complete either way. It
+was enabled on explicit request rather than for correctness: a warning present on every single run
+is one nobody reads, and the tier's whole value depends on people believing its output. **Verified
+after enabling: `preview` exits 0 with zero warnings.**
+
+**`iam.googleapis.com` turned out to be enabled already**, contradicting this table's earlier
+reading and [SPEC.md OQ3](SPEC.md#open-questions). It was found enabled when the state was re-read
+per-API by exact match after the compute change — so either enabling Compute pulled it in as a
+dependency, or the original reading was wrong. **The lesson is the one OQ3 already recorded about
+`grep`:** enablement is ambient state that changes outside this repo, so it is read at the moment
+it matters, never trusted from a document. T11 shrinks accordingly — only
+`cloudresourcemanager.googleapis.com` is definitely still needed.
 
 ## Scope: Two Tiers
 
@@ -138,10 +162,10 @@ remembered to look, which is the same failure mode as a control with no test at 
 
 ```bash
 # Tier A — preview only, creates nothing
-npm run test:integration -- --project=preview
+npm run test:integration:preview
 
 # Tier B — deploys, asserts, destroys (approved; sandbox only)
-npm run test:integration -- --project=deploy
+npm run test:integration:deploy
 
 # Both, as CI runs them
 npm run test:integration
@@ -150,9 +174,14 @@ npm run test:integration
 npm run build
 ```
 
-`test:integration` is a projen task added in `.projenrc.ts`, never a hand-edited `package.json`
-script. It is **not** spawned by `build`; wiring it into `build` would put credentials in the PR
-gate and violate a SPEC.md Always rule.
+All three are projen tasks added in `.projenrc.ts`, never hand-edited `package.json` scripts. None
+is spawned by `build` or `test`; wiring one in would put credentials in the PR gate and violate a
+SPEC.md Always rule.
+
+**Two tasks split by directory, not one task with vitest projects.** A tier that only previews and
+a tier that deploys differ enough in risk to be different commands, and one directory each says so
+without a config file to maintain. `receiveArgs` is set on both, so `-- -t "CR-06"` reaches vitest
+rather than being silently swallowed.
 
 Local runs need application-default credentials against the sandbox project:
 
@@ -164,30 +193,47 @@ gcloud config set project enduring-badge-506610-u9
 ## Project Structure
 
 ```
-test/
+test/                            → the pull-request gate; `vitest run --dir test`
   ci.test.ts                     → existing: parses the emitted workflows
-  integration/
-    preview/
-      dependency-graph.test.ts   → CR-03 against a real engine graph
-      provider-contract.test.ts  → resource shapes the provider still accepts
-    deploy/
-      deletion-protection.test.ts → CR-06 provider-vs-API divergence
-      ingress.test.ts             → CR-01 enforced, not merely requested
-      invoker-binding.test.ts     → CR-03 enforced
-    fixtures/
-      stacks.ts                  → the stack programs under test
-    support/
-      sandbox.ts                 → project id, backend, guard rails
-      gcp-client.ts              → live API reads, distinct from Pulumi state
-vitest.integration.config.ts     → separate config; excluded from the default run
+  integration-guard.test.ts      → the sandbox guard, gated (see below)
+test-integration/                → the tier; never collected by the gate
+  preview/
+    dependency-graph.test.ts     → CR-03 against a real engine graph
+    provider-contract.test.ts    → resource shapes the provider still accepts
+  deploy/
+    deletion-protection.test.ts  → CR-06 provider-vs-API divergence
+    ingress.test.ts              → CR-01 enforced, not merely requested
+    invoker-binding.test.ts      → CR-03 enforced
+  fixtures/
+    stacks/                      → precompiled stack programs + Pulumi.yaml
+  support/
+    sandbox.ts                   → project id, region, guard
+    gcp-client.ts                → live API reads, distinct from Pulumi state
 ```
 
 Integration tests live at the **repo root**, not inside a package: they compose `gcp-components`
 stacks *and* repos emitted by `runway-cli`, so they belong to neither.
 
+**`test-integration/` is a sibling of `test/`, not a subdirectory — the isolation is structural.**
+The root suite runs `vitest run --dir test`, so it *cannot* collect this tree even by accident. The
+first draft of this spec put the tier at `test/integration/` and excluded it by pattern; that puts
+the credential-free guarantee behind a flag a later edit can silently drop, and the failure mode is
+a pull request attempting to deploy to GCP. A directory boundary has no such failure mode.
+
+**Typechecked, never run.** The root `tsconfig.json` includes `test-integration/**/*.ts`, so
+`npm run build` still catches type errors here. Typechecking is offline and needs no credentials;
+only *running* the tier touches GCP.
+
+**The sandbox guard is the one exception, and it is gated deliberately.**
+`test/integration-guard.test.ts` lives in the pull-request gate and imports the guard from
+`test-integration/support/sandbox.ts`. The guard is a pure function over an environment — no I/O,
+no credentials — and it is the single check standing between an unattended `pulumi up` and someone
+else's project. There is no reason for it to be verified only inside the tier it protects: a broken
+guard must fail a pull request.
+
 **One consequence that must be designed around.** `control-mapping.test.ts` walks
 `packages/gcp-components/test` and no further. A control whose only test lives in
-`test/integration/` will therefore fail the "a row without a test fails" check. **Integration tests
+`test-integration/` will therefore fail the "a row without a test fails" check. **Integration tests
 supplement the mapping's unit tests; they never replace them.** Every `CR-0X` keeps its unit test
 inside `packages/gcp-components/test/`, and the mapping's `Tests` column keeps pointing there.
 

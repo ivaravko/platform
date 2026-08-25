@@ -382,7 +382,17 @@ export class SecureContainerService extends pulumi.ComponentResource {
      (`billingAccounts/01A131-8B0806-3C46A4`) and the account holds `roles/owner`.
    - **Enabling `iam.googleapis.com`, `cloudresourcemanager.googleapis.com` and
      `binaryauthorization.googleapis.com` on this project is approved (2026-08-25)** — the
-     Ask-first gate is satisfied. Not yet executed; it is a task in the integration tier's plan.
+     Ask-first gate is satisfied.
+   - **API state, corrected again (2026-08-25), and the correction has a moral.**
+     `compute.googleapis.com` was enabled on request: the GCP provider probes it to validate
+     regions and warned on every `preview` without it. Re-reading state per-API afterwards showed
+     `iam.googleapis.com` **already enabled**, contradicting the paragraph above — either Compute
+     pulled it in, or that reading was stale. Current state:
+     `run`, `artifactregistry`, `serviceusage`, `compute`, `iam` **enabled**;
+     `cloudresourcemanager` and `binaryauthorization` **not**.
+     **Enablement is ambient state that changes outside this repo.** Read it at the moment it
+     matters; do not trust this document, including this line. The `grep` lesson below is the same
+     lesson one level up.
    - `project-4da1a7fd-3681-4524-853` was briefly used first and should **not** be used again: it
      holds live workloads and service accounts (`piper-image-builder`, `app-image-builder`,
      `qwen2vl-image-builder`), so it is not a sandbox in any meaningful sense.
