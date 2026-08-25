@@ -1,18 +1,301 @@
-# Tasks: runway-cli prototype
+# Tasks: gcp-components — SecureContainerService
 
-Six tasks, two checkpoints. Rationale and scope boundary: [tasks/plan.md](plan.md).
-Everything outside the CLI scaffolding mechanism and its generated CI is out of scope.
+Eight tasks, four checkpoints. Rationale, verified toolchain findings, and risks:
+[tasks/plan.md](plan.md). Spec: [SPEC-secure-container-service.md](../SPEC-secure-container-service.md).
 
-- **Phase 1 — Scaffolding** (Tasks 1, 1b, 2, 3): prove a projen project type driven by a CLI emits
-  a repo that builds and lints.
-- **Phase 2 — Generated CI** (Tasks 4–5): that repo verifies itself on every PR. Build, test, and
-  lint only; `pulumi preview` is deferred with `gcp-components`.
+- **Phase A — Foundation** (C1–C2): npm workspaces, and proof that Pulumi works on TypeScript 7.
+- **Phase B — Component** (C3–C6): the validator, the private default, the justified opt-out,
+  Binary Authorization.
+- **Phase C — Enforcement** (C7–C8): the policy pack for consumers who bypass the component, and a
+  control-mapping doc that cannot drift from the suite.
 
-Tasks 3 and 4 are independent and may run in parallel once Task 2 is green.
+Strictly sequential. C5 and C6 both depend on C4 but edit the same file, so they do not parallelise.
+
+The **runway-cli prototype tasks are deferred, not dropped** — see [Deferred](#deferred-runway-cli-prototype)
+at the bottom. Component tasks use a `C` prefix so that plan's numbering stays valid.
 
 ---
 
-## Phase 1: Scaffolding
+## Phase A: Foundation
+
+### C1: Restructure to npm workspaces
+Move `@runway/cli` from the repo root into `packages/runway-cli` and make the root a private
+workspace root. This task adds **no new package content** — its whole job is to prove the move is
+non-destructive before anything is built on top of it.
+
+**Acceptance criteria**
+- [ ] `.projenrc.ts` declares the root as a private `javascript.NodeProject` with subprojects via
+      `parent` + `outdir`; `@runway/cli` becomes `packages/runway-cli` with its config unchanged
+- [ ] The root `package.json` carries `workspaces: ["packages/*"]`, set through
+      `package.addField` — projen ships `PnpmWorkspaceConfig` and no npm equivalent
+- [ ] Root `build`, `test`, and `lint` tasks fan out across workspaces
+- [ ] `oxlint` runs once from the root over both packages, still `--type-aware --deny-warnings`
+
+**Verification**
+- [ ] **The 15 existing runway-cli tests still pass, unmodified** — this is the acceptance test for
+      the whole task
+- [ ] `npm install && npx projen && npm run build && npm test && npm run lint` passes from a clean clone
+- [ ] `npx projen` twice produces zero diff on the second run
+- [ ] A test asserts the root `workspaces` array contains `packages/*` — projen does not maintain it,
+      so an upgrade that silently drops it must fail loudly rather than degrade
+- [ ] No `yarn.lock` or `pnpm-lock.yaml` appears
+
+**Dependencies:** None
+**Files:** `.projenrc.ts`, `projenrc/`, `test/workspaces.test.ts` (new), + mechanical `git mv` of
+`src/`, `test/` into `packages/runway-cli/`
+**Scope:** M — the edits are few; the moves are mechanical
+
+---
+
+### C2: Add the gcp-components package and prove the Pulumi/TS 7 toolchain
+Create the second package and retire the plan's highest risk with a test rather than an assertion.
+[tasks/plan.md](plan.md#toolchain-findings-verified-not-assumed) records what was verified in
+scratch; this reproduces it inside the repo.
+
+**Acceptance criteria**
+- [ ] `packages/gcp-components` exists as a projen subproject named `@runway/gcp-components`
+- [ ] `@pulumi/pulumi` and `@pulumi/gcp` are pinned **exactly** (no caret) per
+      [SPEC.md](../SPEC.md#boundaries); the `@pulumi/gcp` version question is settled deliberately
+      ([plan OQ4](plan.md#open-questions)), not defaulted
+- [ ] `.npmrc` with `legacy-peer-deps=true` is **projen-generated**, and carries a comment
+      explaining that `@pulumi/pulumi` peer-caps TypeScript at `<7` while marking it optional
+- [ ] `test/setup.ts` installs `pulumi.runtime.setMocks()` with no network and no credentials
+
+**Verification**
+- [ ] A smoke test constructs a mocked `gcp.cloudrunv2.Service` and resolves one `Output` — proving
+      findings 2 and 3 hold **inside this repo**, not just in a scratch directory
+- [ ] `npx tsc --noEmit` is clean across both packages with lib checking on
+- [ ] A test asserts the pinned `@pulumi/*` versions, so the check `legacy-peer-deps` disables is
+      replaced by one that fails loudly
+- [ ] `npm install` from a clean clone succeeds with **no** `--legacy-peer-deps` flag on the command
+      line — the `.npmrc` must be doing the work
+- [ ] Full root chain green; `npx projen` twice still zero diff
+
+**Dependencies:** C1
+**Files:** `.projenrc.ts`, `.npmrc` (generated), `packages/gcp-components/test/setup.ts`,
+`packages/gcp-components/test/toolchain.test.ts`
+**Scope:** M — carries the plan's highest risk
+
+---
+
+### ✅ Checkpoint: Toolchain Proven
+- [ ] Pulumi components typecheck and unit-test on TypeScript 7, proven by a test in the PR gate
+- [ ] Both packages build, test, and lint from a clean clone with no credentials
+- [ ] **Decide [plan OQ4](plan.md#open-questions)** — `@pulumi/gcp` 9.35.0 or 9.35.1 — and update
+      [SPEC.md](../SPEC.md#tech-stack) to match
+- [ ] Human review
+
+---
+
+## Phase B: Component
+
+### C3: Service-account email validator
+`assertUserManagedServiceAccount` — a pure function, no Pulumi, no mocks. Carries **CR-04**, the
+control now doing the most work because the typed `SecureServiceAccount` guarantee is deferred.
+
+**Acceptance criteria**
+- [ ] Positive rule: accepts only `<id>@<project>.iam.gserviceaccount.com`. Google-managed defaults
+      are rejected **by falling outside the rule**, not by being enumerated
+- [ ] Known defaults (compute, App Engine, Cloud Build) are pattern-matched **only to improve the
+      error message** — never as the security boundary
+- [ ] Errors name the corrective action, not just the fault
+- [ ] Exported from the package's `src/index.ts`
+
+**Verification**
+- [ ] Table-driven test over the three Google-managed defaults, a human email, and a malformed
+      address — each asserting rejection *and* that the message names the fix
+- [ ] Boundary cases: 6-character id accepted, 5 rejected; 30 accepted, 31 rejected
+- [ ] Leading digit, uppercase, and trailing hyphen rejected
+- [ ] `npm test --workspace @runway/gcp-components -- -t "CR-04"` passes
+
+**Dependencies:** C2
+**Files:** `packages/gcp-components/src/container-service/service-account-email.ts`,
+`packages/gcp-components/src/index.ts`,
+`packages/gcp-components/test/container-service/service-account-email.test.ts`
+**Scope:** S
+
+---
+
+### C4: SecureContainerService — private default path
+The component itself, hardened defaults only. Carries **CR-01, CR-04, CR-05, CR-06, CR-07**.
+
+**Acceptance criteria**
+- [ ] Three required args (`location`, `image`, `serviceAccountEmail`) produce: ingress
+      `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER`, `defaultUriDisabled: true`,
+      `deletionProtection: true`, no IAM member, no `description`, no `runway-public` label
+- [ ] `invokerIamDisabled` is **not exposed and never set** — it disables the IAM check on
+      `run.routes.invoke`, a wider hole than `allUsers` and invisible in an IAM policy dump
+- [ ] `serviceAccountEmail` validates synchronously for a plain string and inside `.apply()` for an
+      `Output`; the arg stays `pulumi.Input<string>` so C-future can accept `SecureServiceAccount.email`
+      without a breaking change
+- [ ] `deletionProtection` opt-out is the discriminated justified form, matching the house convention
+- [ ] TSDoc on `uri` states that the private path disables default-URI resolution, and TSDoc on the
+      class states a default-constructed service is **unreachable until a load balancer is added** —
+      otherwise the first developer to hit it "fixes" it with `publicAccess`
+- [ ] `vpcAccess`, `encryptionKey`, and `iapEnabled` appear **nowhere** in the args interface
+
+**Verification**
+- [ ] One named `it` per control, named after its control-mapping row
+- [ ] Assertions are on resolved `Output` values, never on constructor arguments
+- [ ] Both validation paths tested: plain string throws at construction; `Output` rejects on resolution
+- [ ] `npm test --workspace @runway/gcp-components` passes with no `GOOGLE_APPLICATION_CREDENTIALS`
+
+**Dependencies:** C3
+**Files:** `packages/gcp-components/src/container-service/secure-container-service.ts`,
+`packages/gcp-components/src/index.ts`,
+`packages/gcp-components/test/container-service/secure-container-service.test.ts`
+**Scope:** M
+
+---
+
+### ✅ Checkpoint: Private Default Works
+- [ ] A service built from three args alone is private, protected, and running under a validated SA
+- [ ] Every assertion resolves an `Output`; none inspect constructor input
+- [ ] Suite runs offline, no credentials
+- [ ] Human review
+
+---
+
+### C5: Public access path — the justified opt-out
+The escape hatch, and the auditability that makes it acceptable. Carries **CR-02, CR-03, CR-08**.
+
+**Acceptance criteria**
+- [ ] `publicAccess: { justification }` simultaneously sets ingress `INGRESS_TRAFFIC_ALL`,
+      `defaultUriDisabled: false`, emits one `allUsers` `roles/run.invoker` binding, writes
+      `description`, and sets `labels["runway-public"] = "true"`
+- [ ] An empty or whitespace-only justification is **rejected** — it satisfies the type and defeats
+      the control
+- [ ] The justification reaches `description` **verbatim**; it is not written to a label, which GCP
+      would reject (label values: lowercase alphanumerics, `-`, `_`, ≤63 chars)
+
+**Verification**
+- [ ] Justification round-trips into `description` unmodified
+- [ ] `labels["runway-public"]` is a valid GCP label value
+- [ ] Public path emits exactly one `ServiceIamMember`; private path emits zero
+- [ ] Empty and whitespace-only justifications both throw
+- [ ] `npm test --workspace @runway/gcp-components -- -t "CR-0[238]"` passes
+
+**Dependencies:** C4
+**Files:** `packages/gcp-components/src/container-service/secure-container-service.ts`,
+`packages/gcp-components/test/container-service/secure-container-service.test.ts`
+**Scope:** S
+
+---
+
+### C6: Binary Authorization — opt-in
+Carries **CR-09**. Note the verified type has **no attestor field**: it is
+`{ useDefault, policy, breakglassJustification }`, which closes
+[SPEC.md OQ4](../SPEC.md#open-questions) on different terms than it was asked.
+
+**Acceptance criteria**
+- [ ] `binaryAuthorization` accepts `{ useDefault: true }` or `{ policy }`, and is **absent by
+      default** — `useDefault` fails every deployment in a project with no BinAuthz policy, which is
+      not a default a library may impose
+- [ ] `breakglassJustification` is **not exposed through any public API** — it is the documented way
+      to bypass the policy this control exists to apply
+- [ ] Omitting the arg emits no `binaryAuthorization` block at all, rather than an empty one
+
+**Verification**
+- [ ] Test asserts the emitted block for each of the two accepted forms
+- [ ] Test asserts no `binaryAuthorization` key is emitted when the arg is omitted
+- [ ] A type-level or structural test asserts `breakglassJustification` is unreachable from `SecureContainerServiceArgs`
+- [ ] `npm test --workspace @runway/gcp-components -- -t "CR-09"` passes
+
+**Dependencies:** C4
+**Files:** `packages/gcp-components/src/container-service/secure-container-service.ts`,
+`packages/gcp-components/test/container-service/secure-container-service.test.ts`
+**Scope:** S
+
+---
+
+### ✅ Checkpoint: Component Complete
+- [ ] All nine CR-* controls hold, each with a named test
+- [ ] Negative tests exist for every opt-out; no control has only a happy path
+- [ ] `vpcAccess`, CMEK, and IAP are absent from the public surface
+- [ ] **Resolve [plan OQ2](plan.md#open-questions)** before C7 — whether an out-of-band removal of
+      `runway-public` may be allowed to defeat CR-03 decides the policy rule's shape
+- [ ] Human review
+
+---
+
+## Phase C: Enforcement
+
+### C7: CrossGuard policy pack
+The layer that catches the bypass case: a consumer who declares a raw `gcp.*` resource and skips the
+component entirely. Built with `PolicyPack` + `validateResourceOfType`, `enforcementLevel: "mandatory"`.
+
+**Acceptance criteria**
+- [ ] Rules reject: ingress `INGRESS_TRAFFIC_ALL` without a `runway-public` label; `invokerIamDisabled: true`;
+      `template.serviceAccount` absent or not `*.iam.gserviceaccount.com`; an `allUsers`/`allAuthenticatedUsers`
+      `roles/run.invoker` binding on a service with no `runway-public` label; any `breakglassJustification`
+- [ ] The absent-serviceAccount rule is present and tested — the API types that field
+      `Input<string | undefined>`, so omitting it is legal and silently yields the default compute SA
+- [ ] The pack is **precompiled JS** and its `Pulumi.yaml` (or equivalent) sets
+      `runtime.options.typescript: false` — ts-node cannot load under TS 7, so a `.ts` policy pack
+      will not run at all ([plan finding 5](plan.md#toolchain-findings-verified-not-assumed))
+
+**Acceptance criteria — stop conditions**
+- [ ] If policy rules cannot be unit-tested under vitest without booting a real stack, **stop and
+      report**. Do not weaken a rule to make it testable.
+
+**Verification**
+- [ ] Each rule has a test asserting it fires on the violating resource and stays silent on the
+      compliant one
+- [ ] A stack using only `SecureContainerService` passes with zero violations
+- [ ] `npm test --workspace @runway/gcp-components -- -t "policy"` passes, offline
+
+**Dependencies:** C5, C6
+**Files:** `packages/gcp-components/policy/index.ts`, `packages/gcp-components/policy/rules/cloud-run.ts`,
+`packages/gcp-components/test/policy/cloud-run.test.ts`, `.projenrc.ts`
+**Scope:** M
+
+---
+
+### C8: docs/control-mapping.md and its completeness test
+The mapping doc, plus the test that stops it drifting from the suite. A doc that has drifted is worse
+than no doc, because it reads as proof.
+
+**Acceptance criteria**
+- [ ] One row per control CR-01…CR-09: control → source → component → test name → policy rule
+- [ ] `Source` cites CIS **only** where verified against a named benchmark version and control
+      number; Google Cloud Run guidance otherwise. **No control ID is inferred from subject matter**
+- [ ] CR-04's CIS candidate is either verified and cited precisely, or replaced by the Google URL —
+      it is not left as a vague CIS gesture
+
+**Verification**
+- [ ] A test parses `docs/control-mapping.md`, extracts CR-ids and test names, and asserts
+      **zero rows without a passing test and zero control tests without a row** — bidirectional
+- [ ] Deleting a row or renaming a test makes that test fail
+- [ ] `npm test` passes at the root across both packages
+
+**Dependencies:** C7
+**Files:** `docs/control-mapping.md`, `packages/gcp-components/test/control-mapping.test.ts`
+**Scope:** S
+
+---
+
+### ✅ Checkpoint: Module v1 Complete
+- [ ] All nine controls: default, unit test, policy rule, mapping row — no gaps in any direction
+- [ ] Whole suite runs offline with no GCP credentials
+- [ ] `npx projen` idempotent; both packages build, test, lint from a clean clone
+- [ ] **Decide what comes back next** — the deferred runway-cli tasks below, `SecureServiceAccount`
+      and `SecureArtifactRepository` to complete the v1 module scope, or the real `pulumi preview`
+      integration check that needs a sandbox GCP project
+      ([SPEC.md OQ3](../SPEC.md#open-questions) is still unanswered)
+- [ ] Human review
+
+---
+---
+
+## Deferred: runway-cli prototype
+
+Not dropped. These tasks were the active plan until the Cloud Run component took priority; their
+rationale is preserved verbatim at
+[tasks/runway-cli-prototype-plan.md](runway-cli-prototype-plan.md).
+
+**One amendment is owed when they resume:** every path below assumes the package sits at the repo
+root. After C1 it lives at `packages/runway-cli`, so file paths and commands in Tasks 2–5 need
+updating. That is a C1 consequence, not a regression in those tasks.
 
 ### ✅ Task 1: Bootstrap the CLI package — DONE
 A single projen-managed TypeScript package. Not a monorepo — there is only one module in scope.
@@ -128,7 +411,7 @@ Wire the project type to a command. Parsing and dispatch only — no scaffolding
 ## Phase 2: Generated CI
 
 The scaffolded repo verifies itself on every pull request instead of only on the developer's
-machine. Decisions and risks: [Phase 2 in plan.md](plan.md#phase-2-generated-ci).
+machine. Decisions and risks: [Phase 2 in plan.md](runway-cli-prototype-plan.md#phase-2-generated-ci).
 
 ---
 
