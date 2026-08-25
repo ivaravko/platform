@@ -124,12 +124,42 @@ fixture · `npx projen` idempotent · **human review before Tier A.**
 
 ### Phase 2: Tier A — preview
 
-- [ ] **T4: Provider-contract preview test**
-  - **Description:** `pulumi preview` against the sandbox, asserting the provider still accepts our
-    resource shapes. Catches `@pulumi/gcp` drift that mocks cannot.
-  - **Acceptance:** passes on `9.35.1`; a deliberately renamed field fails it.
-  - **Verify:** `npm run test:integration -- --project=preview`
-  - **Dependencies:** T1, T2, T3 · **Files:** `test-integration/preview/provider-contract.test.ts` · **S**
+- [x] **T4: Provider-contract preview test** — done
+  - **Description:** `pulumi preview` against the sandbox via the Automation API, asserting on the
+    inputs the provider actually received. `preview()` returns only a change summary, so the plan
+    is collected from the engine event stream (`resourcePreEvent`) — the counts say an operation
+    happened, the events say what was sent, and only the latter is a contract.
+  - **Verified:** 7 tests green. CR-01 ingress `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER`, CR-07
+    `defaultUriDisabled`, CR-03 *no* IAM member resource planned at all, CR-04 a non-default
+    service account. Plan is 3 creates, no updates, no deletes.
+  - **Acceptance met — the mutation test passed.** Expecting `INGRESS_TRAFFIC_ALL` failed with
+    `expected 'INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER' to be 'INGRESS_TRAFFIC_ALL'`: 1 failed,
+    6 passed. A precise failure, not a suite abort — the assertion reads a real value from a real
+    plan.
+  - **Also verified:** two consecutive runs both green (see below); the guard refuses
+    `project-4da1a7fd-3681-4524-853` and exits 1; `npm run build` still green.
+  - **Files:** `test-integration/preview/provider-contract.test.ts`,
+    `test-integration/support/stack.ts`, `.projenrc.ts` · **M** (grew from S — the lifecycle
+    helper landed here rather than in T7)
+
+  **Two defects found by running it, both mine:**
+
+  1. **The per-run passphrase broke on the second run.** Pulumi writes `encryptionsalt` into
+     `Pulumi.<stack>.yaml` keyed to the passphrase that created the stack; a fresh passphrase next
+     run means `error: incorrect passphrase`. **The first run passed** — which is precisely how
+     this reaches CI and fails there. Fixed by making the stack ephemeral: `withFixtureStack`
+     creates, uses, and removes it inside one call, deleting any settings file a crashed run left
+     behind. That also makes "3 creates, no updates" meaningful, since leftover state would turn
+     creates into updates and an unchanged resource carries no inputs to assert on.
+  2. **The lint gate rejected two type assertions** (`no-unnecessary-type-assertion`,
+     `no-unsafe-type-assertion`) — caught only because T3 kept the tier typechecked and linted in
+     the PR gate. Replaced with `stringAt`, a predicate-based reader. Casting the shape of a
+     resource input would assert the very thing this tier exists to verify.
+
+  **Committed stack config was dropped as a result.** `Pulumi.integration.yaml` is now gitignored
+  along with all `Pulumi.*.yaml` under fixtures: config is set programmatically from the guard's
+  constants, so the sandbox project id appears in exactly one place, as T1 required and the
+  committed file quietly violated.
 
 - [ ] **T5: CR-03 against a real engine dependency graph**
   - **Description:** Closes a named gap. The stack-scoped CR-03 rule resolves a binding to its

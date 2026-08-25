@@ -38,6 +38,7 @@ jspm_packages/
 /dist/
 !/projenrc/tsconfig.json
 test-integration/fixtures/lib/
+test-integration/fixtures/*/Pulumi.*.yaml
 !/.github/workflows/security.yml
 !/.npmrc
 !/.oxlintrc.json
