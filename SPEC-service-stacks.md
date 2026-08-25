@@ -54,6 +54,37 @@ diverging in a way worth arguing about, not a reason to add a branch.
 | `gcp:region` | required, no default | required, no default |
 | `image` | a tag or a digest | **a digest, always** |
 
+## Project ids are derived, not passed
+
+```
+runway new demo   →   gcp:project = demo-staging     (Pulumi.staging.yaml)
+                      gcp:project = demo-production  (Pulumi.production.yaml)
+```
+
+`<service>-staging` and `<service>-production`. No flags, no config file, no identifier copied
+between two commands — the scaffold already knows the name, so it can write both stack configs
+itself. `environment-provisioning` adopts projects under the same rule, which is what makes the seam
+between the two modules disappear rather than need specifying.
+
+**The convention is load-bearing, so `runway new` must enforce what it implies.** A GCP project id
+is globally unique, 6–30 characters, and must start with a letter. Two of those now constrain the
+service name, and neither is enforced today — `SERVICE_NAME` currently allows a leading digit and up
+to 214 characters:
+
+| Rule | Why | Today |
+|------|-----|-------|
+| Name ≤ **19** characters | `-production` is 11, and the id cap is 30 | 214 |
+| Name starts with a **letter** | A project id may not start with a digit, so `2fa` yields the invalid `2fa-staging` | `^[a-z0-9]` |
+
+Both are validation changes in `runway new`, and both should fail at the point the name is typed —
+long before anyone discovers the problem as a GCP API error during bootstrap.
+
+**Global uniqueness is the residual risk, and it is accepted rather than solved.** `demo-staging` is
+a plausible id in a namespace shared with every GCP customer, so a team will eventually pick a name
+whose project belongs to someone else. Adoption must therefore distinguish *"the project does not
+exist"* from *"the project exists and you cannot see it"* — the second is what a collision looks
+like, and reporting it as "not found" would send someone hunting for the wrong problem.
+
 ## Promotion is a digest, not a rebuild
 
 Production deploys the exact artifact staging ran. `image` in `Pulumi.production.yaml` is a
@@ -67,25 +98,14 @@ something no environment tested.
 | SS-03 | Neither stack is publicly reachable without a justified `publicAccess` opt-out |
 | SS-04 | Every stack declares `typescript: false` and runs precompiled JavaScript |
 | SS-05 | No project id, region, or credential appears as a literal in generated TypeScript |
+| SS-06 | Stack config carries `<service>-staging` / `<service>-production`, and `runway new` rejects a name that cannot produce a valid project id |
 
-## Two corrections this module owes
+## One correction this module owes
 
-Both were found reading the D-series branch, and both are small.
-
-**SS-04 — `Pulumi.yaml` is missing `typescript: false`.** [SPEC.md](SPEC.md#tech-stack) records that
-Pulumi runs `.ts` stack programs through ts-node, which throws under TypeScript 7, so every stack
-must be precompiled and declare `runtime.options.typescript: false`. The generated `Pulumi.yaml`
-currently declares only `runtime: nodejs`. This is latent rather than visible — it breaks the first
-time someone runs `pulumi preview` on a generated repo, which is what `d6-generated-preview` is
-presumably about to discover.
-
-```yaml
-runtime:
-  name: nodejs
-  options:
-    typescript: false
-    # Pulumi runs compiled output; ts-node cannot load TypeScript 7.
-```
+**SS-04 was already fixed.** An earlier draft of this spec listed the generated `Pulumi.yaml` as
+missing `runtime.options.typescript: false`. D6 had already added it, along with
+`main: lib/index.js` and a `compile:infra` task. Recorded here because the claim appeared in this
+spec and was wrong, not because anything remains to do.
 
 **SS-05 — a region default is baked into generated source.**
 [SPEC-runway-cli.md](SPEC-runway-cli.md#boundaries) says never to bake region defaults into
@@ -162,13 +182,14 @@ Module-specific:
 5. `Pulumi.yaml` declares `typescript: false`, and `pulumi preview` runs without ts-node (SS-04).
 6. A `Pulumi.production.yaml` whose `image` is a tag rather than a digest fails the build (SS-02).
 7. An unset `gcp:region` fails with a message naming the key, rather than defaulting.
+8. `runway new` rejects a name longer than 19 characters, and one beginning with a digit, each with
+   a message explaining the GCP project-id rule behind it (SS-06).
+9. Adoption reports an existing-but-inaccessible project as a name collision, not as "not found".
 
 ## Open Questions
 
-1. **Where do the two stack config files get their project ids?** `environment-provisioning
-   --print-config` emits them; nothing yet defines the format, or whether `runway new` consumes it
-   automatically or the developer pastes it. This is the seam between the two modules and it is
-   currently undefined on both sides.
+1. ~~Where do the two stack config files get their project ids?~~ **Resolved: derived from the
+   service name.** See [Project ids are derived, not passed](#project-ids-are-derived-not-passed).
 2. **Does `runway new` create the Pulumi stacks, or only the files?** `pulumi stack init staging`
    needs the state backend to exist and be reachable, which drags provisioning into scaffold time.
    Emitting files and letting the first `pulumi up` initialise is the lower-coupling answer.
