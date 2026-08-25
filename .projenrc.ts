@@ -42,6 +42,17 @@ const common = {
   sampleCode: false,
 } as const;
 
+/**
+ * projen defaults the lib to es2020, older than the runtime this repo already
+ * requires. Node 22.18 implements ES2023, and oxlint's `no-array-sort` steers
+ * to `toSorted()` — an ES2023 method the es2020 lib does not declare — so the
+ * linter and the typechecker contradicted each other until these were aligned.
+ *
+ * Spread into each project's `compilerOptions` rather than set in `common`,
+ * because a project that declares its own `tsconfig` replaces the whole object.
+ */
+const LANGUAGE_LEVEL = { lib: ["es2023"], target: "es2023" } as const;
+
 const root = new typescript.TypeScriptProject({
   ...common,
   name: "platform",
@@ -56,7 +67,7 @@ const root = new typescript.TypeScriptProject({
   // would make `tsc --noEmit` at the root fail TS6059 on its own test files.
   tsconfig: {
     include: ["test/**/*.ts"],
-    compilerOptions: { rootDir: "." },
+    compilerOptions: { rootDir: ".", ...LANGUAGE_LEVEL },
   },
 });
 
@@ -75,6 +86,7 @@ const cli = new typescript.TypeScriptProject({
     "Scaffolds a minimal, projen-managed repository for a new GCP service.",
   bin: { runway: "lib/cli.js" },
   devDeps: [VITEST, VITEST_COVERAGE],
+  tsconfig: { compilerOptions: { ...LANGUAGE_LEVEL } },
 });
 
 /**
@@ -165,6 +177,7 @@ const gcpComponents = new typescript.TypeScriptProject({
   // (peerDependencyOptions.pinnedDevDependency), so tests still resolve them.
   peerDeps: [PULUMI, PULUMI_GCP],
   devDeps: [VITEST, VITEST_COVERAGE],
+  tsconfig: { compilerOptions: { ...LANGUAGE_LEVEL } },
 });
 
 gcpComponents.testTask.exec("vitest run", { receiveArgs: true });
