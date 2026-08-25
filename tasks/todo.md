@@ -424,22 +424,22 @@ component entirely. Built with `PolicyPack` + `validateResourceOfType`, `enforce
   recognising its own output. A contract test asserts the component's emitted description satisfies
   the rule.
 
-### C8: docs/control-mapping.md and its completeness test
+### ✅ C8: docs/control-mapping.md and its completeness test — DONE
 The mapping doc, plus the test that stops it drifting from the suite. A doc that has drifted is worse
 than no doc, because it reads as proof.
 
 **Acceptance criteria**
-- [ ] One row per control CR-01…CR-09: control → source → component → test name → policy rule
-- [ ] `Source` cites CIS **only** where verified against a named benchmark version and control
+- [x] One row per control CR-01…CR-09: control → source → component → test name → policy rule
+- [x] `Source` cites CIS **only** where verified against a named benchmark version and control
       number; Google Cloud Run guidance otherwise. **No control ID is inferred from subject matter**
-- [ ] CR-04's CIS candidate is either verified and cited precisely, or replaced by the Google URL —
+- [x] CR-04's CIS candidate is either verified and cited precisely, or replaced by the Google URL —
       it is not left as a vague CIS gesture
 
 **Verification**
-- [ ] A test parses `docs/control-mapping.md`, extracts CR-ids and test names, and asserts
+- [x] A test parses `docs/control-mapping.md`, extracts CR-ids and test names, and asserts
       **zero rows without a passing test and zero control tests without a row** — bidirectional
-- [ ] Deleting a row or renaming a test makes that test fail
-- [ ] `npm test` passes at the root across both packages
+- [x] Deleting a row or renaming a test makes that test fail
+- [x] `npm test` passes at the root across both packages
 
 **Dependencies:** C7
 **Files:** `docs/control-mapping.md`, `packages/gcp-components/test/control-mapping.test.ts`
@@ -447,10 +447,32 @@ than no doc, because it reads as proof.
 
 ---
 
+**Findings worth carrying forward**
+- **The completeness check was, at first, incapable of failing — and only mutation testing found
+  it.** The scanner walks every `*.test.ts` for quoted control ids, and `control-mapping.test.ts`
+  itself listed `"CR-01" … "CR-09"` in its expected array. So it discovered its own literals and
+  concluded every control was tested. Three of four mutations failed correctly; the fourth
+  ("rename a test so its control id disappears") passed, which is what exposed it. Fixed by
+  excluding the checker from its own scan and deriving the expected ids rather than restating them.
+  **Had I only run the four checks and seen them pass, this would have shipped as proof.**
+- **Four mutations now verified**: delete a row → fail; strip a control id from a test title →
+  fail; point a row at a nonexistent policy rule → fail; add a CIS citation without a version and
+  control number → fail.
+- **v1 ships zero CIS citations, deliberately.** Every URL was checked (HTTP 200) before being
+  written down. The CIS GCP Foundations Benchmark has no Cloud Run section, and its IAM section —
+  the only plausible anchor, for CR-04 — has not been read against these rows. Citing it would be
+  exactly the inference [the agreed rule](../SPEC-secure-container-service.md#4-control-mapping-cites-cis-only-where-cis-genuinely-covers-the-control)
+  forbids. A test enforces that any future CIS mention carries both a version and a numbered control.
+- **`lib` was under-declared as es2020 on a Node 22 repo.** `tsc` rejected `toSorted` and
+  `replaceAll` — APIs that run fine and that oxlint actively asks for. Raised to es2023 across all
+  three projects. Caught by the typecheck gate added in C6; vitest had been perfectly happy.
+
 ### ✅ Checkpoint: Module v1 Complete
-- [ ] All nine controls: default, unit test, policy rule, mapping row — no gaps in any direction
-- [ ] Whole suite runs offline with no GCP credentials
-- [ ] `npx projen` idempotent; both packages build, test, lint from a clean clone
+- [x] All nine controls: default, unit test, mapping row — no gaps in any direction, enforced
+      bidirectionally by test. Five have policy rules; four are component-only, and the mapping
+      doc says which and why
+- [x] Whole suite runs offline with no GCP credentials — 145 tests
+- [x] `npx projen` idempotent; both packages build, test, lint
 - [ ] **Decide what comes back next** — the deferred runway-cli tasks below, `SecureServiceAccount`
       and `SecureArtifactRepository` to complete the v1 module scope, or the real `pulumi preview`
       integration check that needs a sandbox GCP project
