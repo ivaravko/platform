@@ -489,7 +489,15 @@ new JsonFile(root, ".oxlintrc.json", {
         // itself with its parent in the constructor. The return value is meant
         // to be discarded. This holds wherever projen components are declared:
         // the projenrc, and the project types runway-cli emits.
-        files: [".projenrc.ts", "packages/*/src/templates/**/*.ts"],
+        //
+        // Pulumi resources register the same way, so integration fixtures need
+        // the same allowance: a stack declaring a resource nothing else
+        // references is not a mistake, it is the whole program.
+        files: [
+          ".projenrc.ts",
+          "packages/*/src/templates/**/*.ts",
+          "test-integration/fixtures/**/*.ts",
+        ],
         rules: { "no-new": "off" },
       },
     ],

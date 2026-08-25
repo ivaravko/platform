@@ -21,7 +21,8 @@
     {
       "files": [
         ".projenrc.ts",
-        "packages/*/src/templates/**/*.ts"
+        "packages/*/src/templates/**/*.ts",
+        "test-integration/fixtures/**/*.ts"
       ],
       "rules": {
         "no-new": "off"

@@ -1,0 +1,10 @@
+name: runway-integration-public-service
+runtime:
+  name: nodejs
+  options:
+    # Pulumi loads ts-node only when this is true, and ts-node throws under
+    # TypeScript 7 (`ts.sys` is undefined). The program is precompiled instead;
+    # `main` points at the emitted JavaScript. See SPEC.md.
+    typescript: false
+main: ../lib/public-service
+description: Justified-public SecureContainerService fixture; must PASS the policy pack.

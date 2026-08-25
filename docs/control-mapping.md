@@ -56,8 +56,21 @@ Every URL below returned HTTP 200 when this file was written.
   blocks `pulumi destroy` and `terraform destroy`; `gcloud run services delete` and the Cloud
   Console delete the service regardless. Confirmed against a real deployment.
 
-- **The stack-scoped CR-03 rule is not exercised end to end offline.** It resolves a binding to its
-  service through the engine's dependency graph, and `pulumi.runtime.setMocks` supplies none. It is
-  covered by explicit dependency fixtures; proving it against a real plan needs the integration tier
-  ([SPEC.md Open Question 3](../SPEC.md#open-questions), the sandbox project, is unanswered).
+- ~~**The stack-scoped CR-03 rule is not exercised end to end offline.**~~ **Closed 2026-08-25.**
+  The rule resolves a binding to its service through the engine's dependency graph, and
+  `pulumi.runtime.setMocks` supplies none — so it was covered only by explicit dependency fixtures,
+  which test the fixture as much as the rule. It is now exercised against a real plan by
+  `test-integration/preview/dependency-graph.test.ts`, in both directions: a justified public
+  service passes, and a raw `allUsers` binding with no justification fails with the CR-03
+  violation.
+
+  **What makes the pass meaningful.** Both fixtures let Pulumi auto-name the service, so its name
+  is an output that does not exist at plan time and there is no literal string to match on. The
+  only thing connecting binding to service is the dependency edge. Confirmed by mutation: giving
+  the rogue fixture a justification prefix flips it to passing, which is impossible unless the edge
+  resolved. Offline, the same rule reports a violation on the compliant stack — a fiction, which is
+  why `stack-compliance.test.ts` still excludes it and should.
+
+  This tier is nightly and non-blocking, so the offline fixtures in `cloud-run.test.ts` remain the
+  pull-request gate's coverage of CR-03. They were never the problem; being the *only* coverage was.
 - **No CIS citations**, for the reason above. This is a deliberate gap, not an oversight.

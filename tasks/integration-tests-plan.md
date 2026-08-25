@@ -161,15 +161,38 @@ fixture · `npx projen` idempotent · **human review before Tier A.**
   constants, so the sandbox project id appears in exactly one place, as T1 required and the
   committed file quietly violated.
 
-- [ ] **T5: CR-03 against a real engine dependency graph**
+- [x] **T5: CR-03 against a real engine dependency graph** — done; **Risk 1 retired**
   - **Description:** Closes a named gap. The stack-scoped CR-03 rule resolves a binding to its
     service through the engine's graph; `setMocks` supplies none, so it is currently proven only
-    against hand-built fixtures. **Blocked by a real constraint — see Risk 1.**
-  - **Acceptance:** the rule is exercised against a real plan; the *Known gaps* entry for CR-03 in
-    [docs/control-mapping.md](../docs/control-mapping.md) is deleted **in the same commit**.
-  - **Verify:** `npm run test:integration -- --project=preview`; `control-mapping.test.ts` still green.
-  - **Dependencies:** T4 · **Files:** `test-integration/preview/dependency-graph.test.ts`,
-    `docs/control-mapping.md`, pack-install helper · **M**
+    against hand-built fixtures.
+  - **Verified, both directions.** `public-service` (justified) passes; `rogue-public` (raw
+    `allUsers`, no justification) fails with the CR-03 violation. One direction alone proves
+    nothing: a rule that resolved nothing and passed everything would look identical to a working
+    one.
+  - **Mutation proves the edge resolution.** Giving `rogue-public` a `"Public access justified: "`
+    description flipped it to passing — `expected undefined to be defined`, 1 failed / 8 passed.
+    Both fixtures auto-name the service, so its name is an output that does not exist at plan time;
+    the only link between binding and service is the dependency edge. That flip is impossible
+    unless the edge resolved, which is exactly what `setMocks` cannot supply.
+  - **Acceptance met:** the CR-03 *Known gaps* entry in
+    [docs/control-mapping.md](../docs/control-mapping.md) is closed in the same commit.
+  - **Files:** `test-integration/preview/dependency-graph.test.ts`,
+    `test-integration/support/policy-pack.ts`, `fixtures/{public-service,rogue-public}/`,
+    `docs/control-mapping.md`, `.projenrc.ts` · **M**
+
+  **Risk 1 was real, reproduced, and is now retired.** Running the pack from inside the monorepo
+  fails exactly as SPEC.md predicted: `TypeError: Cannot read properties of undefined (reading
+  'readFile')` from the vendored `ts-node@7.0.1`, then `policy pack not started`. Staged into a
+  tree under the OS temp dir where `typescript` does not resolve, it loads: `✅ runway-gcp@v0.0.1`.
+
+  **One correction to SPEC.md's account:** the staged tree needs `@pulumi/gcp` as well as
+  `@pulumi/policy` and `@pulumi/pulumi` — the rules import it for its types. Its absence is not a
+  load failure but a `MODULE_NOT_FOUND` thrown after the runner has started, which reads as a bug
+  in the pack rather than a missing dependency.
+
+  `policy-pack.ts` asserts `typescript` is unreachable from the staged tree before using it. If a
+  transitive dependency ever makes it resolvable, the pack stops loading and `ts.sys.readFile`
+  points nowhere near the cause.
 
 **Checkpoint — Tier A.** One known gap closed and its doc entry removed · sandbox verifiably empty ·
 **human review before anything deploys.**
