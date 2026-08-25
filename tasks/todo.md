@@ -1,361 +1,277 @@
-# Tasks: v1 completion
+# Tasks: environment-provisioning
 
-Seven tasks, three checkpoints. Rationale, risks and the finding that sets the order:
-[tasks/plan.md](plan.md). Completed history: [tasks/completed-v1.md](completed-v1.md).
+Nine tasks, three checkpoints. Rationale, dependency graph and risks: [tasks/plan.md](plan.md).
+Completed history: [tasks/completed-v1.md](completed-v1.md).
 
-- **Phase D — Unblock and complete the components** (D1–D4): make the policy pack runnable where it
-  is consumed, then finish the v1 component set and tighten the argument that has been carrying
-  debt since C4.
-- **Phase E — The paved road deploys** (D5–D6): the scaffold emits real infrastructure, and the
-  repo it emits plans correctly against GCP. This is [success criterion 3](../SPEC.md#success-criteria).
-- **Phase F — Distribution** (D7): publishing, last, because it freezes the API.
+- **Phase E — The boundary** (E1–E5): the permission set, the audit that refuses, and
+  `ServiceEnvironment` built twice — staging, then production.
+- **Phase F — The command** (E6–E7): `runway bootstrap`, and proof against real GCP that a human
+  with legitimate credentials cannot deploy to production.
+- **Phase G — Close out** (E8–E9): the two dangling tasks from earlier plans, so nothing is left
+  half-finished behind this module.
 
-D2 and D3 are independent and touch disjoint files — the only safe parallel pair.
+E2 and E3 are the only safely parallel pair — both depend on E1 alone and touch disjoint files.
 
 ---
 
-## Phase D: Unblock and complete the components
+## Phase E: The boundary
 
-### ✅ D1: Make the policy pack runnable where it is actually consumed — DONE
-The third enforcement layer is currently decorative for every scaffolded repo. `RunwayServiceProject`
-pins `typescript@7.0.2`, and C7 proved the pack cannot load from a tree where `typescript` resolves.
+### E1: The deploy permission set
+What counts as deploy-capable. EP-01, EP-02 and EP-06 all turn on this one answer, so getting it
+wrong makes three controls wrong in the same direction — silently permissive.
 
 **Acceptance criteria**
-- [x] A repo produced by `runway new` can run `pulumi preview --policy-pack <pack>` and the pack
-      **loads and enforces** — demonstrated, not argued
-- [x] The chosen mechanism is documented in [SPEC-secure-container-service.md](../SPEC-secure-container-service.md#hardening-controls),
-      replacing the current "must be consumed from a tree where `typescript` does not resolve" note
-      with whatever is actually true afterwards
-- [x] A test asserts the property the mechanism depends on, so a future change cannot silently
-      break it — the pack failing to load is invisible until someone audits a stack
-
-**Stop conditions**
-- [x] If packaging cannot solve it, **stop and report.** The remaining lever is the generated repo's
-      TypeScript version ([plan OQ2](plan.md#open-questions)), which is a decision to surface, not
-      to take silently.
-- [x] Do not weaken or drop a rule to make the pack loadable.
+- [ ] Deploy-capability is decided by **Cloud Run deploy permissions matched by verb**, per the
+      spec's resolution — not by role name. A custom role granting `run.services.create` is
+      deploy-capable however it is named
+- [ ] Predefined roles are resolved to their permissions, and the set is stated explicitly rather
+      than inferred at runtime from an API that may be unavailable
+- [ ] Exported from the package's `src/index.ts`
 
 **Verification**
-- [x] Scaffold a repo to a temp dir, run `pulumi preview --policy-pack` against it, confirm the pack
-      appears in the `Policies:` block
-- [x] A deliberately non-compliant resource in that scaffolded repo fails the preview
-- [x] Root suite green; no GCP credentials needed for the unit-level part
+- [ ] Table-driven over: `roles/run.admin`, `roles/run.developer`, `roles/owner`, `roles/editor`,
+      a custom role with `run.services.update`, and a genuinely harmless role
+- [ ] **Failure-injected**: a role that merely *contains* "run" but grants no deploy permission is
+      not deploy-capable — the false-positive direction, which is how a control gets disabled
+- [ ] `npm test --workspace @runway/environment-provisioning -- -t "EP-"` passes, offline
 
 **Dependencies:** None
-**Files:** `packages/gcp-components/policy/*`, `.projenrc.ts`, `SPEC-secure-container-service.md`,
-a new test asserting the mechanism
-**Scope:** M — carries the phase's only high risk
+**Files:** `packages/environment-provisioning/src/roles.ts`, `src/index.ts`, `test/roles.test.ts`,
+`.projenrc.ts`
+**Scope:** M — includes standing the package up
 
 ---
 
-**Findings worth carrying forward**
-- **C7's statement of the constraint was wrong, and wrong in a misleading direction.** It said the
-  pack must live where `typescript` does not resolve. That held only by accident of location. The
-  real rule: **the nearest resolvable `typescript` must have a compiler API.** An isolated directory
-  *inside* a TS 7 repo fails with no TypeScript in it and succeeds with TypeScript 5 in it — both
-  measured. Corrected in both specs.
-- **`--install-links` is load-bearing.** Without it npm *symlinks* a local package and Node resolves
-  through the real path, putting the pack back inside the monorepo where TS 7 resolves. This failed
-  identically to having no isolation at all, and only showed up because the pack and the consumer
-  were finally in *different* trees — the earlier scratch test had them in one, which could not
-  distinguish the two hypotheses.
-- **Installing inside `node_modules/` does not survive `npm ci`** — measured, wiped. Hence
-  `.runway-policy/`.
-- All four properties are asserted by test and **mutation-tested**: aligning the two TypeScript
-  pins, dropping `--install-links`, and moving the install into `node_modules` each fail the suite.
-
-### ✅ D2: `SecureServiceAccount` — DONE
-The second v1 component. Its absence is why C4 shipped a runtime check where the module spec
-promised a compile-time one.
+### E2: EP-06 — refuse a production project that already grants human deploys
+A read-only audit over an existing IAM policy. **It refuses and never repairs**, per the spec's
+resolved open question.
 
 **Acceptance criteria**
-- [x] Wraps `gcp.serviceaccount.Account`; exposes `.email` as `pulumi.Output<string>`
-- [x] **`gcp.serviceaccount.Key` is unreachable through the public API** — no argument, no method,
-      no escape hatch. Workload Identity only
-- [x] Role validation rejects `roles/owner`, `roles/editor` and any `*Admin` role at construction,
-      with a message naming the corrective action
-- [x] Exported from `src/index.ts`; consumers never deep-import
-- [x] Control-mapping rows, named tests and policy rules land in the same commit
+- [ ] Given an IAM policy, reports every binding granting a deploy-capable role to a **human**
+      principal — `user:`, and `group:` where the group is not the CI identity
+- [ ] `serviceAccount:` principals are not human; the CI deployer is expected to hold this role
+- [ ] Refuses with the offending bindings named. **No `--fix`, no `--force`** — the spec is explicit
+      that remediation is the team's, so the module never mutates what it is auditing
+- [ ] The message says what to remove and where, because a refusal a team cannot act on gets bypassed
 
 **Verification**
-- [x] Table-driven rejection over `roles/owner`, `roles/editor`, `roles/iam.serviceAccountAdmin`
-      and at least one non-obvious `*Admin`
-- [x] A policy rule rejects a raw `gcp.serviceaccount.Key` anywhere in a stack, with a test proving
-      it fires — the bypass case is the whole reason the rule exists
-- [x] Mutation-tested: break each new negative test and confirm it fails
-- [x] `npm test --workspace @runway/gcp-components -- -t "SA-"` passes
+- [ ] Fixture-driven over policies containing: a user binding, a group binding, a service-account
+      binding, a custom deploy-capable role, and a clean policy
+- [ ] **Failure-injected**: a clean policy passes, then one human binding is added and the same
+      check fires — absence proven against injected presence, not asserted alone
+- [ ] Nothing in the module can write IAM: asserted structurally, not by review
 
-**Dependencies:** D1 (ordering only — the policy rule should land on a runnable pack)
-**Files:** `packages/gcp-components/src/service-account/*`, `src/index.ts`,
-`src/policy/*`, `test/service-account/*`, `docs/control-mapping.md`
+**Dependencies:** E1
+**Files:** `packages/environment-provisioning/src/audit.ts`, `test/audit.test.ts`,
+`docs/control-mapping.md`
 **Scope:** M
 
 ---
 
-**Findings worth carrying forward**
-- **D1's `policy:install` silently served a stale pack, and D2 is how that surfaced.** npm skips
-  re-copying a package it already has at the same version, and this package's version never changes.
-  The rebuilt pack carrying SA-01 and SA-03 never propagated — and the preview went **green**, which
-  is indistinguishable from those rules passing. Only counting the registered policies exposed it.
-  Fixed with `rm -rf` before install, asserted by test. This is the fourth silent-pass in this repo
-  and the first that would have shipped a guardrail claiming to enforce rules it had never loaded.
-- **The allowlist is empty and the denial set is the boundary**, per the decision. `roles/owner`,
-  `roles/editor`, and anything whose **final segment ends in** `admin`. Final-segment matching, not
-  substring: `roles/storage.admin` is administrative and a hypothetical `roles/cloudsql.admin.viewer`
-  is not — rejecting things that are fine is how a control gets switched off.
-- **`roles` is a plain array, not an `Input`** — deliberately, and it is the direct lesson from C4.
-  The roles a service may hold are decided when the code is written, not discovered at deploy time,
-  so validation stays synchronous and fully testable. C4's untestable path does not recur here.
-- The policy rule calls `assertGrantableRoles` rather than reimplementing it, and a test asserts the
-  rejection message originates there — two copies of one control would drift silently.
-- The C8 completeness test was generalised from `CR-\d{2}` to `[A-Z]{2}-\d{2}` with contiguity
-  checked per prefix, so a second component need not continue the first's numbering. Re-mutation-tested.
-- Verified live: a raw `serviceaccount.Key` and a raw `roles/editor` grant both fail a real
-  `pulumi preview`, and a compliant stack passes.
-
-### ✅ D3: `SecureArtifactRepository` — DONE
-The third v1 component. Independent of D2 — disjoint files, safe to run in parallel.
+### E3: `ServiceEnvironment` — staging
+The safe half first. One adopted project, its IAM, its state prefix.
 
 **Acceptance criteria**
-- [x] `format: "DOCKER"`, standard mode, `dockerConfig.immutableTags: true` — a pushed tag can
-      never be repointed
-- [x] `vulnerabilityScanningConfig.enablementConfig: "INHERITED"`
-- [x] `cleanupPolicies`: keep N most recent, delete untagged older than 30 days
-- [x] `kmsKeyName` optional — CMEK supported, not required, no KMS component until v2
-- [x] Arg surface **re-verified against the installed `@pulumi/gcp`**, not taken from the module
-      spec: three of its claims about Cloud Run did not survive that check in C4/C5/C6
-- [x] Control-mapping rows, named tests and policy rules in the same commit
+- [ ] **EP-04**: staging deploy is granted to a **developers group**, never to an individual — a
+      `user:` principal is rejected at construction
+- [ ] **EP-05**: the state bucket is versioned and access-controlled per environment; two
+      environments never share one
+- [ ] Adopts an existing project — it does not create one, per the spec's resolved question
+- [ ] `ServiceEnvironment` is the unit. **No `isProduction` flag**, now or later: the caller composes
+      it twice, because a branch is where the boundary silently softens
 
 **Verification**
-- [x] Assertions resolve `Output` values, never constructor arguments
-- [x] A policy rule rejects a raw repository without `immutableTags`, with a test proving it fires
-- [x] Mutation-tested negative tests
-- [x] `npm test --workspace @runway/gcp-components -- -t "AR-"` passes
+- [ ] Assertions resolve `Output` values, never constructor arguments
+- [ ] **Failure-injected**: passing a `user:` principal throws; passing a group does not
+- [ ] A structural test asserts the args interface carries no environment-kind flag
+- [ ] `npm test -- -t "EP-0[45]"` passes offline
 
-**Dependencies:** D1 (ordering only)
-**Files:** `packages/gcp-components/src/artifact-registry/*`, `src/index.ts`, `src/policy/*`,
-`test/artifact-registry/*`, `docs/control-mapping.md`
+**Dependencies:** E1
+**Files:** `packages/environment-provisioning/src/service-environment.ts`, `src/index.ts`,
+`test/service-environment.test.ts`, `docs/control-mapping.md`
 **Scope:** M
 
 ---
 
-**Findings worth carrying forward**
-- **The arg surface held this time.** Re-verified against `@pulumi/gcp@9.35.1` as the task required:
-  `dockerConfig.immutableTags`, `vulnerabilityScanningConfig.enablementConfig` (`INHERITED` |
-  `DISABLED`), and the cleanup-policy shape all match the module spec. One correction: `mode` is
-  `STANDARD_REPOSITORY`, not "standard".
-- **`cleanupPolicyDryRun` is the interesting find, and it was not in the spec.** It evaluates every
-  cleanup policy and deletes nothing — a repository looks correctly configured and retains
-  everything. That is worse than having no policy, because the configuration reads as a control.
-  AR-03 therefore asserts two things (policies set, dry-run off) and has its own policy rule.
-- **AR-01 has no opt-out at all**, deliberately unlike `publicAccess`. A mutable tag means an
-  approved reference stops meaning an approved image; there is no justification that makes that
-  acceptable, so there is no justified form to supply.
-- The AR-01 rule checks `format === "DOCKER"` first. `dockerConfig` is meaningless on a Maven or npm
-  repository, and a rule that fires where it cannot apply is a rule that gets switched off.
-- **A mutation test failed to fail, and the mutation was wrong rather than the test.** Stripping
-  `AR-02` from one test file still passed, because the id also appears in the policy test — the
-  control genuinely was still covered. Removing it from both files failed correctly. A mutation that
-  does not actually remove the property proves nothing about the check.
-- Verified live: a raw repository with mutable tags, scanning disabled and dry-run retention fails a
-  real `pulumi preview` with all three AR violations. Ten policies now registered.
-
-### ✅ D4: `SecureContainerService` takes a `SecureServiceAccount` — DONE
-Closes [spec OQ1](../SPEC-secure-container-service.md#open-questions) and C4's documented gap. A
-breaking change, taken deliberately while it is still free.
+### E4: Workload Identity Federation
+**EP-03**: CI authenticates by federation. One pool per service, in that service's own project, per
+the spec's resolved question.
 
 **Acceptance criteria**
-- [x] `serviceAccountEmail: pulumi.Input<string>` becomes `serviceAccount: SecureServiceAccount`,
-      making the default compute identity **unreachable through the type system** — the guarantee
-      the module spec promised and v1 downgraded
-- [x] C4's untestable failing-`Output` path is **gone, not worked around**: with no string argument
-      there is no `apply`-time validation left to test, and the note in
-      `secure-container-service.test.ts` explaining the gap is removed rather than left stale
-- [x] CR-04's policy rule is unchanged — raw resources still bypass the type system, so the runtime
-      check stays where it still matters
-- [x] [SPEC-secure-container-service.md](../SPEC-secure-container-service.md) updated: scope
-      decision 1 currently records the string form as a deliberate reduction, and that stops being
-      true
+- [ ] Creates a per-service pool and provider; **no service account key is ever created**, and the
+      component exposes no way to ask for one — the same guarantee as SA-01
+- [ ] The provider's attribute condition is scoped to **one repository and one ref**, not to the
+      GitHub issuer at large
+- [ ] The binding names the CI deployer service account only
 
 **Verification**
-- [x] A type-level test (`@ts-expect-error`) proves a bare string is rejected — **mutation-tested**,
-      since an unused directive is exactly the silent-pass C6 caught
-- [x] Every existing CR-01/04/05/06/07 test still passes, adjusted only for the new argument
-- [x] Root suite green; `npx projen` idempotent
+- [ ] **Failure-injected, both axes**: the condition rejects a wrong repository *and* a wrong ref.
+      Asserting that a condition string merely exists would pass for a condition matching everything
+- [ ] A policy rule rejects a raw `gcp.serviceaccount.Key` anywhere in a bootstrap stack, with a test
+      proving it fires
+- [ ] `npm test -- -t "EP-03"` passes offline
 
-**Dependencies:** D2
-**Files:** `packages/gcp-components/src/container-service/secure-container-service.ts`,
-its tests, `SPEC-secure-container-service.md`
+**Dependencies:** E3
+**Files:** `packages/environment-provisioning/src/workload-identity.ts`,
+`test/workload-identity.test.ts`, `src/policy/*`, `docs/control-mapping.md`
 **Scope:** M
 
 ---
 
-**Findings worth carrying forward**
-- **C4's gap is gone rather than documented.** With no string argument there is no `apply`-time
-  validation left, so the path vitest could not test does not exist. That is the difference between
-  closing a gap and working around one — and it is why the plan put D4 before publishing.
-- The `@ts-expect-error` assertion is **mutation-tested**: widening the argument back to
-  `SecureServiceAccount | string` makes `tsc` fail with an unused directive. Without that check it
-  would look like coverage while asserting nothing, which is the same silent-pass C6 caught.
-- **The runtime check stayed where it still matters.** `assertUserManagedServiceAccount` is
-  unchanged and still backs CR-04's policy rule: a consumer writing a raw `gcp.cloudrunv2.Service`
-  bypasses the type system entirely. The type guards this component, the policy pack guards the rest
-  — deleting the validator because "the type handles it now" would have removed the half that covers
-  everyone who never uses the component.
-- The C6 typecheck gate earned its keep again: the mechanical swap left four unused symbols that
-  vitest was perfectly happy with and `tsc --noEmit` rejected.
+### E5: `ServiceEnvironment` — production
+Where the boundary actually exists. Composes E2's audit and E4's federation.
 
-### ✅ Checkpoint: v1 component set complete
-- [ ] All three v1 components exist, exported, each with controls, tests, policy rules and mapping rows
-- [ ] The C8 completeness test passes in both directions with the new controls included
-- [ ] The policy pack loads and enforces in a scaffolded repo (D1), or the blocker is on the table
-      with a decision requested
-- [ ] **Decide [plan OQ1](plan.md#open-questions)** — the role allowlist's contents
+**Acceptance criteria**
+- [ ] **EP-01**: the production project grants **no deploy role to any human principal** — no user,
+      no group, no exception, no justified opt-out. Unlike `publicAccess`, there is no form of this
+      that is acceptable, so there is no form to supply
+- [ ] **EP-02**: the deploy role is granted **only** to the CI federated identity, scoped to one
+      repository and ref
+- [ ] Construction runs E2's audit first and **refuses** if the adopted project already grants human
+      deploys — bootstrap fails rather than proceeding onto a compromised project
+
+**Verification**
+- [ ] **Failure-injected**: constructing against a policy containing a human deploy binding throws,
+      and the same construction against a clean policy succeeds
+- [ ] The emitted IAM is enumerated and checked binding by binding, not counted — a count of one
+      would pass for the wrong single binding
+- [ ] `npm test -- -t "EP-0[12]"` passes offline
+
+**Dependencies:** E2, E4
+**Files:** `packages/environment-provisioning/src/service-environment.ts`, its tests,
+`docs/control-mapping.md`
+**Scope:** M
+
+---
+
+### ✅ Checkpoint: the boundary exists in code
+- [ ] All seven EP controls hold, each with a named test and a mapping row
+- [ ] Every negative assertion is failure-injected — no absence asserted without injected presence
+- [ ] The completeness test passes bidirectionally with `EP-` included
+- [ ] **Answer [plan OQ2](plan.md#open-questions)** — whether `runway bootstrap` may write IAM, and
+      to which projects — before E7 runs anything
 - [ ] Human review
 
 ---
 
-## Phase E: The paved road deploys
+## Phase F: The command
 
-### ✅ D5: The scaffold emits `infra/` built from the components — DONE
-The prototype deliberately emitted no infrastructure, because doing so early meant either raw
-`gcp.*` resources or waiting on components. The components now exist.
+### E6: `runway bootstrap`
+Wires the module to a command. Parsing and composition only.
 
 **Acceptance criteria**
-- [x] `runway new <name>` emits an `infra/` Pulumi program using `SecureArtifactRepository`,
-      `SecureServiceAccount` and `SecureContainerService` — and **no raw `gcp.*` resource**
-- [x] The emitted program is precompiled with `runtime.options.typescript: false`.
-      **I removed this in D5 and D6 put it back — the criterion was right.** The reasoning for
-      dropping it ("TS 5 means ts-node loads") was true and irrelevant: ts-node *loads* fine and
-      then type-checks the whole `@pulumi/gcp` declaration graph on every invocation. Measured at
-      **over two minutes without completing**, on Pulumi's vendored ts-node 7 *and* on a current
-      ts-node 10. Compiled, the same preview finishes in seconds.
-- [x] `@runway/gcp-components` is resolved by the generated repo, by version or `file:` link, and
-      which one is a deliberate choice recorded in the template
-- [x] The emitted file tree is asserted exactly, as Tasks 2 and 4 already do
-- [x] No `TODO` markers, commented-out code, or placeholder scaffolding
+- [ ] `--staging-project` required; `--production-project` **optional**, because a service may adopt
+      staging alone and add production later
+- [ ] **EP-07**: `--print-config` reports a service with no production environment as
+      **incomplete** — visibly, not by omission, since a silent gap reads as "configured"
+- [ ] Refuses invalid project ids and repository specs before touching anything
+- [ ] `--help` lists the flags and says which are required
 
 **Verification**
-- [x] Build-out test: scaffold to a temp dir, `npm install && npx projen && npm run build && npm test && npm run lint` all pass unmodified
-- [x] `grep -rE "gcp\.(cloudrunv2|serviceaccount|artifactregistry)" <scaffold>/infra` returns nothing —
-      the scaffold must not teach the habit the product exists to prevent
-- [x] Temp dir cleaned up on both pass and fail
+- [ ] End-to-end through the CLI binary, not the module directly
+- [ ] **Failure-injected**: staging-only output states production is missing; a run with both does not
+- [ ] A dry run writes nothing — asserted by checking the target project is unchanged, per resource
+      type, rather than inferred from an empty filter
 
-**Dependencies:** D2, D3, D4
-**Files:** `packages/runway-cli/src/templates/runway-service-project.ts`, its tests
+**Dependencies:** E5
+**Files:** `packages/runway-cli/src/commands/bootstrap.ts`, `src/cli.ts`, `test/commands/*`
 **Scope:** M
 
 ---
 
-**Findings worth carrying forward**
-- **Adding the components to a TypeScript 7 scaffold fails `ERESOLVE`** — measured, not predicted.
-  The `@pulumi/*` peers cap TypeScript at `<7`. That forced a decision the plan had flagged as OQ2
-  and D1 had appeared to close: **scaffolded repos now pin TypeScript 5.** It removes the `.npmrc`,
-  the precompile step, and the isolated policy-pack install from every generated repo at once. The
-  platform keeps 7 and keeps paying for it, which is the right side to spend it on.
-  It also reverses an existing test's stated rationale — *"legacy-peer-deps is a platform cost, not
-  the user's"* — which was true only while the scaffold had no Pulumi dependencies.
-- **`infra/` was emitted and never typechecked.** It sits outside `srcdir`, so `compile` never saw
-  it: the artifact the spec calls load-bearing and says must be deployable unmodified could have
-  been broken TypeScript with a green build. Now has its own `tsconfig.json` and a `typecheck` task
-  wired into `test`. Mutation-tested — a type error in `infra/` fails the scaffold's own suite.
-- Wiring that up **immediately caught TS2742** on the exported stack outputs: with the components
-  resolved through a `file:` link, TypeScript cannot name the inferred `Output` type portably. Fixed
-  with explicit annotations, which an exported stack output deserves anyway.
-- **The no-raw-provider claim is now greppable.** The example had `const gcp = new pulumi.Config("gcp")`,
-  so `grep gcp\.` found hits in a file whose whole point is that it declares no provider resource.
-  Renamed to `gcpConfig`, and the test asserts the file contains no `gcp.` **at all** — stricter than
-  the rule needs, because a reader checking the claim should not have to squint. The first version of
-  that assertion failed on my own comment, which quoted the forbidden string.
-
-### ✅ D6: The generated repo's `pulumi preview` succeeds — success criterion 3 — DONE
-The premise, finally testable: the repo `runway new` emits actually deploys.
+### E7: Prove the boundary in GCP
+The claim the module exists to make: **a developer holding every credential they legitimately
+possess still cannot deploy to production.** Until this runs, that is a design, not a fact.
 
 **Acceptance criteria**
-- [x] `pulumi preview` on a freshly scaffolded repo, against `enduring-badge-506610-u9`, plans
-      exactly one Artifact Registry repository, one service account, one Cloud Run service — and
-      **nothing public** ([confirm the shape first](plan.md#open-questions), OQ5)
-- [x] The same preview run with `--policy-pack` reports **zero violations**
-- [x] `preview` only. `pulumi up` from a generated repo is a separate decision and is not taken here
-- [x] SPEC.md success criterion 3 marked met, with the evidence recorded
+- [ ] EP-06's refusal demonstrated against a **real** project whose IAM grants a human deploy role
+- [ ] The staging path bootstraps successfully and the grants are read back from Google, not
+      inferred from the plan
+- [ ] A human principal's deploy attempt against production is **denied by GCP**, and the denial is
+      observed rather than assumed
+
+**Stop conditions**
+- [ ] **Gated on [plan OQ2](plan.md#open-questions).** This writes IAM to a real project. Do not run
+      it on unstated authorization
+- [ ] If no project can serve as a clean production target ([plan OQ1](plan.md#open-questions)),
+      **stop and report** — verify the refusal path and say plainly that the acceptance path is
+      unverified. Do not weaken EP-06 to manufacture a passing test
 
 **Verification**
-- [x] Preview output captured and checked resource by resource, not just by count
-- [x] A deliberately weakened copy of the generated program fails the policy pack — proving the
-      zero-violation result means the rules ran, not that they were absent
-- [x] Nothing is created: service-account and Cloud Run listings in the sandbox are unchanged
-      afterwards, checked per-resource rather than inferred from an empty filter
+- [ ] Every grant made is recorded so it can be revoked, and revocation is verified afterwards
+- [ ] Project state checked per resource type before and after
+- [ ] Result recorded in [SPEC-environment-provisioning.md](../SPEC-environment-provisioning.md),
+      including anything left unverified
 
-**Dependencies:** D5, D1
-**Files:** integration harness (location to be decided in D6), `SPEC.md`
-**Scope:** M
+**Dependencies:** E6
+**Files:** `test-integration/`, `SPEC-environment-provisioning.md`
+**Scope:** M — carries the plan's highest risk
 
 ---
 
-**Findings worth carrying forward**
-- **D5's precompile removal was wrong, and D6 is where that surfaced.** The first preview of a
-  generated repo hung — no output at all, killed at 600s. Cause: Pulumi runs a `.ts` program through
-  ts-node with type checking on, which here means type-checking the entire `@pulumi/gcp` declaration
-  graph every single run. Reproduced on Pulumi's vendored ts-node 7.0.1 **and** on ts-node 10.9.2,
-  so it is not a version problem. Precompiled, the identical preview finishes in seconds. The
-  original criterion was right and is restored.
-- **The TypeScript 5 decision still stands** — it removed the `ERESOLVE`, the `.npmrc`, and the
-  isolated policy-pack install. It simply does not remove the need to precompile, which is a
-  separate cost with a separate cause. Two changes bundled under one justification, and only one of
-  them held.
-- **Criterion 3 was checked resource by resource, not by count.** A count of three would have passed
-  for three repositories. The plan carries exactly one `artifactregistry/repository` (DOCKER,
-  standard, immutable tags), one `serviceaccount/account`, one `cloudrunv2/service` (internal-LB
-  ingress, deletion protection, default URI disabled, running as that account), and **no
-  `ServiceIamMember` of any kind**.
-- **The zero-violation result was proven to mean something.** A weakened copy of the generated
-  program — one raw `gcp.cloudrunv2.Service` appended — fails with two mandatory violations. Without
-  that, "zero violations" is indistinguishable from a pack that loaded no rules, which is exactly
-  the failure D2 caught in D1.
-- Nothing was created: zero Cloud Run services and zero Artifact Registry repositories in the
-  sandbox afterwards, checked per resource type rather than inferred from an empty filter.
-
-### ✅ Checkpoint: the paved road works end to end
-- [ ] A developer with no GCP knowledge can run `runway new`, and the result plans a private,
-      least-privilege service against a real project
-- [ ] The generated repo enforces its own guardrails — the policy pack loads and passes
-- [ ] Success criteria 1–5 all met
-- [ ] **Decide whether `pulumi preview` belongs in *generated* CI**, which needs Workload Identity
-      and is the point where the PR gate stops being credential-free
+### ✅ Checkpoint: the boundary holds against Google
+- [ ] EP-06 refuses a real project that grants human deploys
+- [ ] Staging bootstraps, and its grants read back correctly from GCP
+- [ ] Anything unverified is stated plainly rather than implied by silence
+- [ ] Everything granted during the run has been revoked, and that is confirmed
+- [ ] **Resolve [plan OQ3](plan.md#open-questions)** — `service-stacks`' three open questions —
+      before its plan is written
 - [ ] Human review
 
 ---
 
-## Phase F: Distribution
+## Phase G: Close out
 
-### D7: Publishing with independent semver tags — success criterion 6
-Last deliberately: publishing freezes the public API, and D4 is a breaking change.
+### E8: T11–T12 — the integration workflow
+Left unchecked when the T-series landed. Folded in here so it is not carried indefinitely as
+"nearly done".
 
 **Acceptance criteria**
-- [ ] Both packages publish independently, with independent versions
-- [ ] The registry decision is made and recorded ([plan OQ3](plan.md#open-questions)) — it changes
-      CI publish config and the generated repo's `.npmrc`
-- [ ] The generated repo resolves `@runway/gcp-components` by **published version**, replacing
-      whatever D5 chose
-- [ ] The policy pack ships in the published artifact and still loads from a consumer tree (D1's
-      mechanism holds after publishing, verified rather than assumed)
+- [ ] **T11**: the remaining API(s) enabled on the sandbox, recorded per-API by exact match — an
+      empty `grep` cannot distinguish "not enabled" from "the command failed", which has already
+      produced one wrong claim in this repo
+- [ ] **T12**: an `integration` workflow that runs the gated tier, separately from the PR gate
+- [ ] **The PR gate stays credential-free and offline** — the integration tier never runs there
+
+**Verification**
+- [ ] The workflow is parsed and asserted structurally, as `ci-workflow.test.ts` already does
+- [ ] No literal credential, project id or token appears anywhere in `.github/`
+- [ ] Failure injection demonstrated at least once in the tier (T10 already does this)
+
+**Dependencies:** None
+**Files:** `.projenrc.ts`, `.github/workflows/`, `test/`, `tasks/integration-tests-plan.md`
+**Scope:** S
+
+---
+
+### E9: D7 — publishing, now three packages
+Carried from [v1-completion](v1-completion-plan.md). Still last, and now later still: this module
+adds a third package, and publishing freezes all three.
+
+**Acceptance criteria**
+- [ ] All three packages publish independently with independent versions
+- [ ] The registry decision is made and recorded — still open, and now open for three packages
+- [ ] Generated repos resolve `@runway/gcp-components` by **published version**, replacing the
+      `file:` link D5 chose
+- [ ] The policy pack still loads from a consumer tree after publishing — D1's mechanism verified
+      against the published artifact, not assumed to survive packaging
 
 **Verification**
 - [ ] `npm pack` for each package contains what it should and nothing it should not
-- [ ] A scaffolded repo installing the **published** package builds, tests, lints, and previews
-- [ ] `.npmrc` in the generated repo matches the registry decision
+- [ ] A scaffolded repo installing the **published** packages builds, tests, lints, and previews
+- [ ] The published policy pack enforces: a raw non-compliant resource fails a real preview
 
-**Dependencies:** D6
-**Files:** `.projenrc.ts`, `.github/workflows/*`, `packages/*/package.json`, `SPEC.md`
+**Dependencies:** E7
+**Files:** `.projenrc.ts`, `.github/workflows/`, `packages/*/package.json`, `SPEC.md`
 **Scope:** M
 
 ---
 
-### ✅ Checkpoint: v1 complete
-- [ ] All six SPEC.md success criteria met, each with recorded evidence
-- [ ] Every control has a default, a test, a policy rule and a mapping row — enforced bidirectionally
-- [ ] **Apply or reject the two upstream spec corrections** owed since C5/C6
-      ([plan OQ4](plan.md#open-questions))
-- [ ] Decide what v2 opens with: the deferred networking module, KMS, or widening into the CIS-covered
-      services where the mapping doc's `Source` column finally has something to cite
+### ✅ Checkpoint: module complete
+- [ ] A developer with every credential they legitimately hold cannot deploy to production, and that
+      has been **observed against GCP** rather than designed
+- [ ] All seven EP controls: default, test, mapping row, and failure injection
+- [ ] Nothing outstanding from earlier plans — T-series and D-series both closed
+- [ ] **Decide what `release-path` needs**, since it has no spec and is what makes this boundary
+      usable ([plan OQ4](plan.md#open-questions))
 - [ ] Human review
