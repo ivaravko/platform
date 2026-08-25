@@ -210,6 +210,8 @@ new JsonFile(root, ".oxlintrc.json", {
   },
 });
 
-root.gitignore.exclude("dist/", ".tmp-scaffold/");
+// .claude/worktrees/ is where EnterWorktree puts isolated checkouts. Untracked,
+// it would show up in `git status` and break the clean-tree checks each task runs.
+root.gitignore.exclude("dist/", ".tmp-scaffold/", ".claude/worktrees/");
 
 root.synth();

@@ -40,4 +40,5 @@ jspm_packages/
 !/.oxlintrc.json
 dist/
 .tmp-scaffold/
+.claude/worktrees/
 !/.projenrc.ts
