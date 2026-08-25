@@ -1,10 +1,10 @@
 # Tasks: runway-cli prototype
 
-Five tasks, two checkpoints. Rationale and scope boundary: [tasks/plan.md](plan.md).
+Six tasks, two checkpoints. Rationale and scope boundary: [tasks/plan.md](plan.md).
 Everything outside the CLI scaffolding mechanism and its generated CI is out of scope.
 
-- **Phase 1 — Scaffolding** (Tasks 1–3): prove a projen project type driven by a CLI emits a repo
-  that builds.
+- **Phase 1 — Scaffolding** (Tasks 1, 1b, 2, 3): prove a projen project type driven by a CLI emits
+  a repo that builds and lints.
 - **Phase 2 — Generated CI** (Tasks 4–5): that repo verifies itself on every PR. Build, test, and
   lint only; `pulumi preview` is deferred with `gcp-components`.
 
@@ -25,21 +25,48 @@ A single projen-managed TypeScript package. Not a monorepo — there is only one
 - [x] TypeScript 7.0.2 and vitest 4.1.11 resolve and run — **if projen cannot drive TS 7, stop and report rather than silently pinning TS 5.x**
       → **Reported and resolved by decision.** TS 7 is the native compiler and exposes no JS
       compiler API, which breaks ts-node and typescript-eslint. `tsc` and vitest are unaffected.
-      Chosen: keep TS 7, run `.projenrc.ts` via `TypeScriptRunner.nodejs()`, drop ESLint until
-      [typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940).
+      Chosen: keep TS 7 and run `.projenrc.ts` via `TypeScriptRunner.nodejs()`. ESLint was dropped
+      ([typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940))
+      and is **superseded by oxlint in Task 1b** — waiting on typescript-eslint is no longer needed.
 - [x] `.gitignore` covers `node_modules/`, `dist/`, and temp scaffold output
 
 **Verification**
 - [x] `npm install && npx projen && npm run build && npm test` passes from a clean clone.
       **Install comes first** — `npx projen` executes `.projenrc.ts`, which imports `projen`, so it
-      cannot run before `node_modules` exists. No lint step; ESLint is disabled, see
-      [SPEC.md](../SPEC.md#tech-stack)
+      cannot run before `node_modules` exists. No lint step at the time this task shipped —
+      the linter arrives in Task 1b.
 - [x] `npx projen` twice produces zero diff on the second run (`git diff --exit-code`)
 - [x] `package-lock.json` is generated and no `yarn.lock` or `pnpm-lock.yaml` appears
 
 **Dependencies:** None
 **Files:** `.projenrc.ts`, `.gitignore` (+ projen-generated `package.json`, `tsconfig.json`)
 **Scope:** S — carries the plan's only high risk
+
+---
+
+### Task 1b: Wire Oxlint into the platform package
+Restores the lint gate that TypeScript 7 took away. Separate from Task 1 because Task 1 shipped
+without a linter and is already committed — this is the follow-up that closes it.
+
+**Acceptance criteria**
+- [ ] `.projenrc.ts` registers a `lint` task running `oxlint --type-aware --deny-warnings`, and a
+      `lint:fix` variant with `--fix`; `eslint: false` stays (projen has no oxlint component)
+- [ ] `oxlint@1.80.0` and `oxlint-tsgolint@7.0.2001` are pinned devDeps
+- [ ] `--deny-warnings` is present, so a warning fails the build rather than printing a report
+- [ ] `.oxlintrc.json` is projen-generated, not hand-written — it is config, and the repo's rule is
+      that projen owns config
+
+**Verification**
+- [ ] `npm run lint` exits 0 on the current tree
+- [ ] Introducing an unused variable makes `npm run lint` exit non-zero, and removing it restores 0
+      — proves the gate actually gates
+- [ ] A floating promise is caught, proving `--type-aware` is live and not silently syntax-only
+- [ ] `npm install && npx projen && npm run build && npm test && npm run lint` passes from a clean clone
+- [ ] `npx projen` twice still produces zero diff
+
+**Dependencies:** Task 1
+**Files:** `.projenrc.ts`, `.oxlintrc.json` (generated), `test/toolchain.test.ts` (assert the pins)
+**Scope:** S
 
 ---
 
@@ -50,11 +77,14 @@ buildable repository.
 **Acceptance criteria**
 - [ ] `RunwayServiceProject` subclasses `projen.typescript.TypeScriptProject` and is exported
 - [ ] Emits `.projenrc.ts`, `src/index.ts` (health endpoint only), `test/index.test.ts` (one passing test), `README.md`
+- [ ] Emits an oxlint setup matching the platform's — `eslint: false`, a `lint` task, pinned
+      `oxlint`/`oxlint-tsgolint`, and a generated `.oxlintrc.json`. This is what lets the scaffold
+      pin TS 7 and still honour the "build, test, lint" output its spec advertises.
 - [ ] Generated `.projenrc.ts` resolves `@runway/cli` via `file:` link so the repo can regenerate itself
 - [ ] No `TODO` markers, commented-out code, or placeholder scaffolding in emitted files
 
 **Verification**
-- [ ] Test scaffolds into a temp dir and runs `npx projen && npm install && npm run build && npm test` — all pass unmodified
+- [ ] Test scaffolds into a temp dir and runs `npm install && npx projen && npm run build && npm test && npm run lint` — all pass unmodified
 - [ ] Test asserts the exact emitted file tree, no extra files
       — **amended by Task 4**, which adds `.github/workflows/build.yml` to the expected tree
 - [ ] `grep -rE "TODO|FIXME" <scaffold>` returns nothing
@@ -105,7 +135,7 @@ machine. Decisions and risks: [Phase 2 in plan.md](plan.md#phase-2-generated-ci)
 ### Task 4: Emit the CI workflow from `RunwayServiceProject`
 Turn on projen's GitHub integration and switch off everything projen would add beyond the build
 workflow. One emitted file, running the generated repo's own `build` task — which in projen's
-`TypeScriptProject` already chains compile → test → eslint, so a single job covers all three.
+`TypeScriptProject` chains compile → test, and Task 1b's `lint` task joins them, so a single job covers all three.
 
 **Acceptance criteria**
 - [ ] `RunwayServiceProject` sets `github: true`, `release: false`, `depsUpgrade: false`,
@@ -122,7 +152,7 @@ workflow. One emitted file, running the generated repo's own `build` task — wh
 **Verification**
 - [ ] `npm test -- -t "ci workflow"` passes
 - [ ] Build-out test (extending Task 2's): scaffold to a temp dir, then
-      `npx projen && npm install && npm run build` still passes with the workflow present
+      `npm install && npx projen && npm run build && npm run lint` still passes with the workflow present
 - [ ] Test parses the emitted YAML and asserts job `build` exists with steps in order:
       checkout → node setup → install → `npx projen build` — exactly four steps
 - [ ] Test asserts `.github/workflows/` contains exactly one entry

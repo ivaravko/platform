@@ -45,7 +45,8 @@ Versions verified against the npm registry and the local toolchain on 2026-08-24
 | Concern            | Choice                     | Version   |
 |--------------------|----------------------------|-----------|
 | Language           | TypeScript                 | `7.0.2` (native compiler — see below) |
-| Linter             | none — blocked on TS 7     | —         |
+| Linter             | oxlint                     | `1.80.0`  |
+| Type-aware lint    | `oxlint-tsgolint`          | `7.0.2001` |
 | Runtime            | Node.js                    | `>=22`, dev on `26.3.0` |
 | Repo/build manager | projen                     | `0.103.2` |
 | Package manager    | npm workspaces             | `>=10`, dev on `11.16.0` |
@@ -62,12 +63,25 @@ consequences, both verified rather than assumed:
 - **ts-node cannot run**, so projen's default projenrc runner fails. `.projenrc.ts` is executed by
   Node's own type stripping instead (`TypeScriptRunner.nodejs()`), which needs no compiler API.
   This is why `minNodeVersion` is `22.18.0`.
-- **There is no linter.** `typescript-eslint` throws on import — *"typescript-eslint does not
-  support TS 7.0"* — and its peer range caps at `<6.1.0`, so it cannot even install. ESLint is
-  disabled until [typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940)
-  ships TS 7 support. **Reinstate the lint gate when it does.**
+- **ESLint is unusable.** `typescript-eslint` throws on import — *"typescript-eslint does not
+  support TS 7.0"* — and its peer range caps at `<6.1.0`, so it cannot even install
+  ([typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940)).
 
 `tsc` and vitest both work on TS 7 — only the tools that link against the compiler API are affected.
+
+**oxlint is the linter, and it sidesteps the problem entirely.** oxlint parses TypeScript with its
+own Rust parser (oxc) and has **zero runtime dependencies**, so it never touches the compiler API
+that TS 7 removed. Type-aware rules come from the optional `oxlint-tsgolint` peer, which is itself
+powered by typescript-go — the same compiler we already build with. Both verified against
+`typescript@7.0.2`: plain oxlint flags `no-unused-vars`, and `--type-aware` flags
+`no-floating-promises`, a rule that cannot work without type information.
+
+This is not a downgrade from typescript-eslint. It is the same class of check, on a toolchain that
+actually supports TS 7.
+
+**projen has no oxlint component** (verified — `projen/lib` contains no oxlint or oxc references),
+so `eslint: false` stays set and the lint task is registered by hand in `.projenrc.ts`. That hand-
+wiring is the cost of the choice, and it is small: one `addTask` call.
 
 **Monorepo mechanics.** projen natively supports subprojects via `parent` + `outdir` on `Project`
 (verified in `projen/lib/project.d.ts:34,46`). The root `.projenrc.ts` declares both packages. All
@@ -99,6 +113,12 @@ npm run build --workspaces
 
 # Test with coverage
 npm test --workspaces -- --coverage
+
+# Lint (type-aware). --deny-warnings is what makes it a gate rather than a report.
+npx oxlint --type-aware --deny-warnings
+
+# Lint, autofixing what is fixable
+npx oxlint --type-aware --fix
 
 # Typecheck without emitting
 npx tsc --noEmit

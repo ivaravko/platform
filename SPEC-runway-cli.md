@@ -89,7 +89,7 @@ less proves only that we can write files.
 |------------|---------------------------------------------------------------------------|
 | Unit       | Arg parsing, name validation, version-check logic in `doctor`              |
 | Generation | Scaffold to a temp dir; assert exact file tree; assert no TODO placeholders |
-| Build-out  | In that temp dir: `npx projen && npm install && npm run build && npm test && npm run lint` — all must pass |
+| Build-out  | In that temp dir: `npm install && npx projen && npm run build && npm test && npm run lint` — all must pass |
 | Contract   | Typecheck the generated `infra/index.ts` against the real `@runway/gcp-components` types |
 | Idempotence| Run `npx projen` twice; assert zero diff on the second run                 |
 
@@ -125,7 +125,7 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific additions:
 ## Success Criteria
 
 1. `runway new demo --gcp-project X --region europe-west1` into an empty dir, then
-   `npx projen && npm install && npm run build && npm test && npm run lint` — all pass, no edits.
+   `npm install && npx projen && npm run build && npm test && npm run lint` — all pass, no edits.
 2. The generated `infra/index.ts` typechecks against real `@runway/gcp-components` types and
    declares zero raw `gcp.*` resources.
 3. `pulumi preview` in the generated repo plans exactly three resource groups — service account,

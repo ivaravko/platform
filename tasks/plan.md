@@ -39,6 +39,14 @@ on the development machine — pnpm was not. One cost carried knowingly: projen 
 hand-wired via `package.addField`. That is documented in SPEC.md and does not touch this prototype,
 which is single-package.
 
+**Linter: oxlint, type-aware.** ESLint is unusable here — `typescript-eslint` throws on TS 7 and
+its peer range will not even install. oxlint parses TypeScript with its own Rust parser and has zero
+runtime dependencies, so the compiler API TS 7 removed is irrelevant to it; type-aware rules come
+from `oxlint-tsgolint`, itself built on typescript-go. Both verified against `typescript@7.0.2`.
+projen has no oxlint component, so `eslint: false` stays and the lint task is one hand-written
+`addTask` in `.projenrc.ts`. The scaffold gets the same treatment, which is why the generated repo
+can pin TS 7 *and* keep the lint step its spec advertises.
+
 **One package, not a monorepo.** The monorepo exists to version two modules independently. With
 one module there is nothing to coordinate, and projen has no npm-workspaces support at all — it
 would be the prototype's largest risk for no prototype-level benefit.
@@ -75,20 +83,12 @@ Deliberately lighter than the full-scope bar — this is a prototype, and saying
 than pretending it clears a production gate.
 
 - [ ] Acceptance criteria met and verified by running it, not by typechecking
-- [ ] `npm run build` and `npm test` pass (no lint — ESLint disabled, blocked on TS 7)
+- [ ] `npm run build`, `npm test`, and `npm run lint` pass
 - [ ] No `any`, no dead code, no `TODO` markers in generated output
 - [ ] Human review before the task is checked off
 
 ## Open Questions
 
-0. **Does the *generated* repo pin TypeScript 7 too — and therefore also lose its linter?**
-   Decided in Task 1 for the platform package only. If the scaffold inherits TS 7, it inherits the
-   typescript-eslint block, and three things stop being true:
-   [SPEC-runway-cli.md](../SPEC-runway-cli.md#scaffold-output)'s "build, test, lint" scaffold
-   output, its build-out chain and success criterion 1, and Task 4's claim that one CI job covers
-   build/test/lint. The generated repo could instead pin TypeScript 6.0.3 and keep its lint gate —
-   the scaffold's TS version need not match the platform's. **Decide at the start of Task 2**;
-   nothing before it depends on the answer.
 1. **Does the prototype need to prove more than scaffolding?** If seeing a Pulumi stack deploy is
    the point, that is a different prototype and needs `gcp-components` first.
 2. **Distribution** — a `bin`, `npx`, or a projen external project type? Task 3 assumes a plain
