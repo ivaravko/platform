@@ -70,3 +70,41 @@ describe("package manager", () => {
     expect(existsSync(join(root, lockfile))).toBe(false);
   });
 });
+
+describe("gcp-components package", () => {
+  it("lives at packages/gcp-components under the runway scope", () => {
+    expect(readPackage("packages", "gcp-components").name).toBe("@runway/gcp-components");
+  });
+
+  it("pins every @pulumi/* dependency exactly", () => {
+    // SPEC.md: exact versions for @pulumi/*, caret ranges only for dev tooling.
+    // With legacy-peer-deps disabling npm's own compatibility check, an exact
+    // pin is what is left holding the verified combination in place.
+    const pkg = readPackage("packages", "gcp-components") as unknown as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+    };
+    const all = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.peerDependencies };
+    const pulumi = Object.entries(all).filter(([n]) => n.startsWith("@pulumi/"));
+    expect(pulumi.length).toBeGreaterThan(0);
+    for (const [name, range] of pulumi) {
+      expect(range, name).toMatch(/^\d+\.\d+\.\d+$/);
+    }
+  });
+
+  it("declares @pulumi/* as peer dependencies, not plain dependencies", () => {
+    // Two copies of @pulumi/pulumi in one program break resource registration.
+    // A published library that bundles its own copy makes that the consumer's
+    // problem, and moving deps -> peerDeps later is a breaking change.
+    const pkg = readPackage("packages", "gcp-components") as unknown as {
+      dependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+    };
+    expect(Object.keys(pkg.peerDependencies ?? {})).toEqual(
+      expect.arrayContaining(["@pulumi/pulumi", "@pulumi/gcp"]),
+    );
+    expect(Object.keys(pkg.dependencies ?? {})).not.toContain("@pulumi/pulumi");
+  });
+});
+

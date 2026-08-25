@@ -76,29 +76,35 @@ relocated), `test/lint-gate.test.ts` (extended with workspace coverage),
 - oxlint discovers `.oxlintrc.json` by walking up from the working directory — verified with a rule
   only the root config enables — so one config governs every package.
 
-### C2: Add the gcp-components package and prove the Pulumi/TS 7 toolchain
+### ✅ C2: Add the gcp-components package and prove the Pulumi/TS 7 toolchain — DONE
 Create the second package and retire the plan's highest risk with a test rather than an assertion.
 [tasks/plan.md](plan.md#toolchain-findings-verified-not-assumed) records what was verified in
 scratch; this reproduces it inside the repo.
 
 **Acceptance criteria**
-- [ ] `packages/gcp-components` exists as a projen subproject named `@runway/gcp-components`
-- [ ] `@pulumi/pulumi` and `@pulumi/gcp` are pinned **exactly** (no caret) per
-      [SPEC.md](../SPEC.md#boundaries); the `@pulumi/gcp` version question is settled deliberately
-      ([plan OQ4](plan.md#open-questions)), not defaulted
-- [ ] `.npmrc` with `legacy-peer-deps=true` is **projen-generated**, and carries a comment
+- [x] `packages/gcp-components` exists as a projen subproject named `@runway/gcp-components`
+- [x] `@pulumi/pulumi` and `@pulumi/gcp` are pinned **exactly** (no caret) per
+      [SPEC.md](../SPEC.md#boundaries). **[plan OQ4](plan.md#open-questions) resolved: `9.35.1`** —
+      the whole Cloud Run arg surface in the component spec was verified against it, and SPEC.md's
+      `9.35.0` pin predated that verification. SPEC.md's table is updated to match.
+- [x] **Beyond the stated criteria: `@pulumi/*` are `peerDeps`, not `deps`.** Two copies of
+      `@pulumi/pulumi` in one program break resource registration, and a published library that
+      bundles its own copy makes that the consumer's problem — moving `deps` → `peerDeps` later
+      would be a breaking change. projen also pins them as devDeps
+      (`peerDependencyOptions.pinnedDevDependency`), so tests still resolve them.
+- [x] `.npmrc` with `legacy-peer-deps=true` is **projen-generated**, and carries a comment
       explaining that `@pulumi/pulumi` peer-caps TypeScript at `<7` while marking it optional
-- [ ] `test/setup.ts` installs `pulumi.runtime.setMocks()` with no network and no credentials
+- [x] `test/setup.ts` installs `pulumi.runtime.setMocks()` with no network and no credentials
 
 **Verification**
-- [ ] A smoke test constructs a mocked `gcp.cloudrunv2.Service` and resolves one `Output` — proving
+- [x] A smoke test constructs a mocked `gcp.cloudrunv2.Service` and resolves one `Output` — proving
       findings 2 and 3 hold **inside this repo**, not just in a scratch directory
-- [ ] `npx tsc --noEmit` is clean across both packages with lib checking on
-- [ ] A test asserts the pinned `@pulumi/*` versions, so the check `legacy-peer-deps` disables is
+- [x] `npx tsc --noEmit` is clean across both packages with lib checking on
+- [x] A test asserts the pinned `@pulumi/*` versions, so the check `legacy-peer-deps` disables is
       replaced by one that fails loudly
-- [ ] `npm install` from a clean clone succeeds with **no** `--legacy-peer-deps` flag on the command
+- [x] `npm install` from a clean clone succeeds with **no** `--legacy-peer-deps` flag on the command
       line — the `.npmrc` must be doing the work
-- [ ] Full root chain green; `npx projen` twice still zero diff
+- [x] Full root chain green; `npx projen` twice still zero diff
 
 **Dependencies:** C1
 **Files:** `.projenrc.ts`, `.npmrc` (generated), `packages/gcp-components/test/setup.ts`,
@@ -106,6 +112,23 @@ scratch; this reproduces it inside the repo.
 **Scope:** M — carries the plan's highest risk
 
 ---
+
+**Findings worth carrying forward**
+- **`.npmrc` has a bootstrap deadlock.** projen installs each subproject during `postSynthesize`,
+  which runs *before* the root writes its files — so on a tree with no `.npmrc`, adding the first
+  Pulumi package makes `npx projen` fail `ERESOLVE` and the `.npmrc` that would have fixed it is
+  never written. Harmless on a clean clone, where `.npmrc` is committed and present before
+  `npm install`; it bites only when bootstrapping the file itself. Written by hand once, then
+  handed to projen.
+- **The lint gate caught a real defect in this task's own code.** `pulumi.runtime.setMocks` is
+  declared `async` and returns `Promise<void>`, so `no-floating-promises` fired on `test/setup.ts`.
+  Its body contains no `await` — it installs the mock monitor and sets feature flags synchronously
+  (`@pulumi/pulumi/runtime/mocks.js`) — so there is **no race today** and `void` is correct. The
+  reasoning is recorded in the file, with the trigger for revisiting it: if a future Pulumi release
+  makes that body genuinely async, the fix is to export the promise and await it in `beforeAll`.
+- `src/index.ts` exports `TYPE_NAMESPACE = "runway:gcp"` rather than an empty `export {}`, which
+  oxlint rejects. Not filler: SPEC.md requires components to register as `runway:gcp:<Component>`,
+  so the prefix is written down once where C3 onward can use it.
 
 ### ✅ Checkpoint: Toolchain Proven
 - [ ] Pulumi components typecheck and unit-test on TypeScript 7, proven by a test in the PR gate

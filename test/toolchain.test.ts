@@ -87,3 +87,27 @@ describe("package manager", () => {
     expect(existsSync(join(root, "packages", "runway-cli", "package-lock.json"))).toBe(false);
   });
 });
+
+describe("npm config", () => {
+  const npmrc = (): string => read(".npmrc");
+
+  it("sets legacy-peer-deps, without which @pulumi/pulumi cannot install at all", () => {
+    // @pulumi/pulumi declares peerDependencies typescript ">= 3.8.3 < 7".
+    // TypeScript 7.0.2 is outside that range, so a plain `npm install` fails
+    // ERESOLVE. Both peers are optional, so nothing needs them at runtime --
+    // the range is stale metadata, not a real constraint.
+    expect(npmrc()).toMatch(/^legacy-peer-deps\s*=\s*true$/m);
+  });
+
+  it("explains itself in the file, where someone hitting the failure will look", () => {
+    // The cost of this flag is that it disables peer checking repo-wide. A bare
+    // key would leave the next reader to rediscover why it is here.
+    expect(npmrc()).toMatch(/@pulumi\/pulumi/);
+    expect(npmrc()).toMatch(/#/);
+  });
+
+  it("is projen-generated, not hand-written", () => {
+    expect(filesJson().files).toContain(".npmrc");
+  });
+});
+

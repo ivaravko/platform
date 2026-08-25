@@ -51,7 +51,7 @@ Versions verified against the npm registry and the local toolchain on 2026-08-24
 | Repo/build manager | projen                     | `0.103.2` |
 | Package manager    | npm workspaces             | `>=10`, dev on `11.16.0` |
 | IaC engine         | `@pulumi/pulumi`           | `3.259.0` |
-| GCP provider       | `@pulumi/gcp`              | `9.35.0`  |
+| GCP provider       | `@pulumi/gcp`              | `9.35.1`  |
 | Policy as code     | `@pulumi/policy`           | `1.21.0`  |
 | Test runner        | vitest                     | `4.1.11`  |
 | Pulumi CLI         | `pulumi`                   | `3.246.0` (installed) |
@@ -68,6 +68,24 @@ consequences, both verified rather than assumed:
   ([typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940)).
 
 `tsc` and vitest both work on TS 7 — only the tools that link against the compiler API are affected.
+
+**A third casualty, found in C2: `@pulumi/pulumi` cannot be installed at all without help.** It
+declares `peerDependencies: { typescript: ">= 3.8.3 < 7", "ts-node": ">= 7.0.1 < 12" }`, so npm
+refuses to resolve it alongside `typescript@7.0.2` and fails `ERESOLVE`. Both peers are marked
+optional and nothing needs them at runtime — the range is stale metadata, not a real constraint.
+
+The repo therefore ships a projen-generated `.npmrc` containing `legacy-peer-deps=true`. **The cost
+is real and repo-wide:** peer checking is disabled for every package, so a genuinely incompatible
+peer elsewhere will now install silently instead of erroring. What replaces that check is exact
+pinning of every `@pulumi/*` version plus tests asserting those pins, so drift fails loudly.
+
+**And ts-node's breakage reaches further than projen.** Pulumi runs `.ts` programs through ts-node,
+which throws under TS 7 (`ts.sys` is undefined). Pulumi loads it only when
+`PULUMI_NODEJS_TYPESCRIPT === "true"` (`@pulumi/pulumi/cmd/run/run.js:234`), set from
+`runtime.options.typescript` in `Pulumi.yaml`. **Every stack and policy pack in this repo must
+therefore be precompiled and declare `typescript: false`** — otherwise `pulumi preview` cannot run
+at all. Verified: `tsc` 7 typechecks Pulumi components cleanly and vitest drives
+`pulumi.runtime.setMocks()` without issue, so only the ts-node path is affected.
 
 **oxlint is the linter, and it sidesteps the problem entirely.** oxlint parses TypeScript with its
 own Rust parser (oxc) and has **zero runtime dependencies**, so it never touches the compiler API
