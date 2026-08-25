@@ -509,19 +509,19 @@ buildable repository.
 
 ---
 
-### Task 3: `runway new` entry point
+### ✅ Task 3: `runway new` entry point — DONE
 Wire the project type to a command. Parsing and dispatch only — no scaffolding logic here.
 
 **Acceptance criteria**
-- [ ] `runway new <name>` scaffolds via `RunwayServiceProject` into `./<name>`
-- [ ] Refuses a non-empty target directory and writes nothing
-- [ ] Rejects invalid names, including path traversal, before writing anything
-- [ ] `--help` lists the command and its arguments
+- [x] `runway new <name>` scaffolds via `RunwayServiceProject` into `./<name>`
+- [x] Refuses a non-empty target directory and writes nothing
+- [x] Rejects invalid names, including path traversal, before writing anything
+- [x] `--help` lists the command and its arguments
 
 **Verification**
-- [ ] End-to-end test through the CLI binary, not the project type directly; scaffolded repo builds
-- [ ] Non-empty-dir test asserts the pre-existing file is byte-identical afterwards
-- [ ] Traversal fixture (`../escape`) exits non-zero and writes nothing
+- [x] End-to-end test through the CLI binary, not the project type directly; scaffolded repo builds
+- [x] Non-empty-dir test asserts the pre-existing file is byte-identical afterwards
+- [x] Traversal fixture (`../escape`) exits non-zero and writes nothing
 
 **Dependencies:** Task 2
 **Files:** `packages/runway-cli/src/cli.ts`, `packages/runway-cli/src/commands/new.ts`,
