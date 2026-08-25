@@ -26,7 +26,7 @@ security document.
 |----------------------------|-----------------------------------------------------------------------|-----------------------------------|
 | `gcp-components`           | Pulumi `ComponentResource`s for GCP; secure-by-default, typed args     | —                                 |
 | `runway-cli`               | projen-based CLI scaffolding a minimal service repo (build, CI, infra) | `gcp-components`                  |
-| `environment-provisioning` | Adopts two existing GCP projects as a service's staging and production environments: provisions the WIF pool, state bucket, and the IAM that grants CI production deploys and denies them to humans. Once per service. | —              |
+| `environment-provisioning` | Adopts existing GCP projects as a service's environments: provisions the WIF pool, state bucket, and the IAM that grants CI production deploys and denies them to humans. Staging is required; production is added when the team is ready. | —              |
 | `service-stacks`           | Environment-aware `infra/` in the scaffold: `staging` and `production` Pulumi stacks composing gcp-components | `gcp-components`, `environment-provisioning` |
 | `release-path`             | `runway deploy --env staging` from localhost; production only from CI over WIF, promoting the digest staging verified | `service-stacks`, `runway-cli`    |
 
@@ -328,7 +328,12 @@ export class SecureContainerService extends pulumi.ComponentResource {
   user-managed SA keys impossible to create through the library.
 - Emit a component that is public-by-default.
 - Weaken a default to make a test pass.
-- Run `pulumi up` or `pulumi destroy` unattended, or against a project not designated as sandbox.
+- Run `pulumi up` or `pulumi destroy` against a project not designated as sandbox.
+- Run `pulumi up` or `pulumi destroy` unattended — **except** from the `integration` workflow
+  against the designated sandbox `enduring-badge-506610-u9`, which is permitted. Amended
+  2026-08-25 to unblock the integration tier's Tier B; the exception is scoped to that one project
+  and that one workflow, and every other unattended invocation remains forbidden. See
+  [SPEC-integration-tests.md](SPEC-integration-tests.md#boundaries).
 
 ## Success Criteria
 
@@ -367,9 +372,13 @@ export class SecureContainerService extends pulumi.ComponentResource {
      original claim came from a `grep` that returned nothing — which cannot distinguish "no matches"
      from "the command failed", the same absence-versus-nothing-happened trap this repo's tests keep
      catching. Enabled state is now read per-API by exact match.
-   - `preview` needs no APIs enabled at all. `pulumi up` is still a separate decision that has not
-     been taken; billing is active (`billingAccounts/01A131-8B0806-3C46A4`) and the account holds
-     `roles/owner`, so nothing blocks it technically.
+   - `preview` needs no APIs enabled at all. **`pulumi up` was a separate decision, and it has now
+     been taken: approved 2026-08-25**, unattended from the `integration` workflow against this
+     project only. The Never list is amended accordingly. Billing is active
+     (`billingAccounts/01A131-8B0806-3C46A4`) and the account holds `roles/owner`.
+   - **Enabling `iam.googleapis.com`, `cloudresourcemanager.googleapis.com` and
+     `binaryauthorization.googleapis.com` on this project is approved (2026-08-25)** — the
+     Ask-first gate is satisfied. Not yet executed; it is a task in the integration tier's plan.
    - `project-4da1a7fd-3681-4524-853` was briefly used first and should **not** be used again: it
      holds live workloads and service accounts (`piper-image-builder`, `app-image-builder`,
      `qwen2vl-image-builder`), so it is not a sandbox in any meaningful sense.

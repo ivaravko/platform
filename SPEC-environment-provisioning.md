@@ -6,11 +6,14 @@ Shared toolchain, code style, and boundaries are inherited from [SPEC.md](SPEC.m
 
 ## Objective
 
-Adopt two existing GCP projects as a service's staging and production environments, and establish
-the identity boundary between them, such that **a developer holding every credential they
-legitimately possess still cannot deploy to production**.
+Adopt existing GCP projects as a service's environments and establish the identity boundary between
+them, such that **a developer holding every credential they legitimately possess still cannot deploy
+to production**.
 
 That sentence is the whole module. Everything else is mechanism.
+
+A service adopts staging first and production when it is ready, so the boundary arrives with the
+production project rather than at bootstrap — see [Staging first](#staging-first-and-the-drift-it-invites).
 
 **Users**
 - *Platform engineers* — hold `roles/resourcemanager.projectIamAdmin` on the two projects, run this
@@ -54,9 +57,40 @@ that granted it, and this module has no way to know why it exists — a bootstra
 someone's access is worse than one that stops and asks. Remediation is a decision for a human who
 knows the project's history.
 
+## Staging first, and the drift it invites
+
+`--production-project` is optional because that is how teams actually adopt: get staging working,
+prove the loop, add production when there is something worth protecting. Forcing both up front makes
+the first run harder than it needs to be, on the day the team has least appetite for it.
+
+**But a staging-only service has no boundary at all.** The module's objective — a developer cannot
+deploy to production — is *vacuously* true when there is no production. Every control except EP-04
+and EP-05 is inert. That is fine as a waypoint and dangerous as a destination, because of a specific
+and very common failure:
+
+> A team bootstraps staging, ships to it, and starts serving real traffic from it. Production never
+> arrives. The environment everyone depends on is now the one with human deploy access, no CI-only
+> path, and no digest promotion — precisely the configuration this module exists to prevent.
+
+Nothing in a tool can stop a team deciding staging is good enough. What it can do is refuse to let
+that happen *silently*:
+
+| Id    | Control                                                                                     |
+|-------|---------------------------------------------------------------------------------------------|
+| EP-07 | A service with no production environment is reported as **incomplete** by `--print-config` and on every bootstrap run, naming what is not yet enforced |
+
+EP-07 is a report, not a refusal. Refusing would block the adoption path the option exists to
+support. The point is that "we only have staging" should be a fact someone has read, not a state
+nobody noticed.
+
+**Adding production later is a first-class path, not a re-run.** `runway bootstrap --production-project`
+against a service that already has staging must add the production environment, the WIF pool and its
+bindings, and leave staging's IAM and state untouched. That is a different operation from idempotent
+re-application and gets its own test.
+
 ## The enforcement claim, stated precisely
 
-Six controls carry the entire guarantee. Each has exactly one named test.
+Seven controls carry the entire guarantee. Each has exactly one named test.
 
 | Id    | Control                                                                                          | Why it matters |
 |-------|--------------------------------------------------------------------------------------------------|----------------|
@@ -65,6 +99,10 @@ Six controls carry the entire guarantee. Each has exactly one named test.
 | EP-03 | CI authenticates by **Workload Identity Federation**; no service account key is created, ever      | [SPEC.md](SPEC.md#boundaries) forbids SA keys, and a key is a credential that can leave CI |
 | EP-04 | The staging project grants deploy to a **developers group**, not to individuals                    | Offboarding is a group removal, not an IAM archaeology exercise |
 | EP-05 | State buckets are **versioned and separately access-controlled per environment**                   | Whoever can write production state can forge production infrastructure |
+
+**When production is absent**, EP-01, EP-02, EP-03 and EP-06 are inert — there is nothing to
+enforce them against — and EP-07 reports that fact. EP-04 and EP-05 apply to staging from the first
+run.
 
 **EP-02 is the one that is easy to get wrong.** A Workload Identity Pool with a permissive attribute
 condition — or none — lets *any* GitHub repository mint tokens for your production deployer. The
@@ -96,14 +134,26 @@ first run, and is the fallback if migration proves fragile.
 
 ## Commands
 
+`--staging-project` is required. `--production-project` is **optional**: a service may adopt staging
+alone and add production later. See [Staging first](#staging-first-and-the-drift-it-invites).
+
 ```bash
-# Adopt two existing projects as a service's environments.
-# Requires projectIamAdmin on both. No org or billing rights.
+# Staging only. The common starting point.
+# Requires projectIamAdmin on the staging project.
+runway bootstrap <service-name> \
+  --staging-project <project-id> \
+  --github-repo <org>/<repo> \
+  --region europe-west1
+
+# Both environments, which is where a service is meant to end up.
 runway bootstrap <service-name> \
   --staging-project <project-id> \
   --production-project <project-id> \
   --github-repo <org>/<repo> \
   --region europe-west1
+
+# Add production to a service that already has staging. Must not disturb staging.
+runway bootstrap <service-name> --production-project <project-id>
 
 # Audit the adopted projects without changing anything (EP-06 precondition)
 runway bootstrap <service-name> --staging-project … --production-project … --audit
@@ -175,6 +225,8 @@ construction with a message naming EP-01 — the type steers, the runtime check 
 | Negative    | A `production` environment with a human principal throws, naming the control      | Blocking |
 | Attribute   | The WIF binding asserts both `repository` and `ref`; a repository-only binding fails | Blocking |
 | Audit       | EP-06: a fixture project whose IAM already grants a human `roles/editor` causes bootstrap to fail and names the binding | Blocking |
+| Staging-only| Bootstrap with no `--production-project` succeeds, provisions staging, and reports the service incomplete (EP-07) | Blocking |
+| Later-add   | Adding production to a staging-only service provisions it and leaves staging's IAM and state byte-identical | Blocking |
 | Integration | `pulumi preview` against a real sandbox org                                       | Blocking before first production use |
 
 - Every control EP-01…EP-05 has exactly one named test. A control without a test is not a control.
@@ -228,6 +280,10 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 8. **Adopting a production project that already grants a human a deploy-capable role fails**, names
    every offending binding, and changes nothing (EP-06).
 9. No GCP project is created or deleted by any code path in this module.
+10. Bootstrap **succeeds with `--staging-project` alone**, and reports the service as incomplete,
+    naming the controls not yet in force (EP-07).
+11. Adding `--production-project` later provisions production and leaves staging's IAM bindings and
+    state bucket unchanged — verified by comparing before and after, not by inspection.
 
 ## Open Questions
 
@@ -245,6 +301,11 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 5. **Does production allow *any* human break-glass path?** EP-01 says no. Real incidents sometimes
    say otherwise. If a break-glass role is wanted, it should be specified deliberately — time-boxed,
    alerting, and audited — rather than appearing later as an exception nobody reviewed.
-6. **What does this module do about the existing prerequisite gap?** `service-stacks` needs
+6. **Should a staging-only service expire?** EP-07 reports incompleteness forever and nothing
+   escalates. An alternative is for the report to sharpen with age — a warning after a month, a
+   failing audit after a quarter — on the argument that "temporary" staging-only is exactly the
+   state that becomes permanent. That may be paternalistic for a platform this young; it is worth
+   deciding rather than defaulting.
+7. **What does this module do about the existing prerequisite gap?** `service-stacks` needs
    `SecureServiceAccount` and `SecureArtifactRepository`, which have no spec. They are not this
    module's job, but nothing downstream ships without them.

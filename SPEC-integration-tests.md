@@ -90,7 +90,7 @@ accounts (`piper-image-builder`, `app-image-builder`, `qwen2vl-image-builder`).
 ## Scope: Two Tiers
 
 Tier B is the point of this spec, and Tier A is not merely a stepping stone to it — they fail on
-different things. Split because they carry different risk and different approval状態.
+different things. Split because they carry different risk and different approval status.
 
 ### Tier A — `preview` against the sandbox
 
@@ -118,8 +118,10 @@ Reading back **through the API, not through Pulumi state**, is the whole design.
 records what we asked for; the API reports what GCP did. CR-06 is the proof that these differ, and
 a test that reads Pulumi state would have missed it.
 
-**Status: blocked on three decisions, none of which I should take unilaterally.** Listed in Open
-Questions below. Tier B does not get built until they are answered.
+**Status: approved 2026-08-25 and unblocked.** The two decisions it rested on — unattended
+`pulumi up` against the sandbox, and enabling three APIs on that project — are both taken, and
+[SPEC.md](SPEC.md#boundaries)'s Never list is amended to scope the exception to this workflow and
+this project. Tier A and Tier B are now planned together rather than sequentially.
 
 ## Commands
 
@@ -127,7 +129,7 @@ Questions below. Tier B does not get built until they are answered.
 # Tier A — preview only, creates nothing
 npm run test:integration -- --project=preview
 
-# Tier B — deploys, asserts, destroys (gated; see Open Questions)
+# Tier B — deploys, asserts, destroys (approved; sandbox only)
 npm run test:integration -- --project=deploy
 
 # Both, as CI runs them
@@ -285,10 +287,16 @@ Inherits SPEC.md. Additions and one amendment specific to this tier:
 - Weaken an assertion because a control behaves differently against real GCP than against mocks —
   that divergence is the finding, and it belongs in the mapping's *Known gaps*.
 
-**Amends SPEC.md.** SPEC.md's Never list currently reads: *"Run `pulumi up` or `pulumi destroy`
-unattended, or against a project not designated as sandbox."* Tier B is unattended by construction
-— it is a nightly CI job. **This spec does not take that decision.** It is Open Question 1 below,
-and Tier B is not built until SPEC.md's boundary is amended in the same commit that builds it.
+**Amends SPEC.md — done, 2026-08-25.** SPEC.md's Never list previously read: *"Run `pulumi up` or
+`pulumi destroy` unattended, or against a project not designated as sandbox."* Tier B is unattended
+by construction — it is a nightly CI job — so the rule has been split in two:
+
+- Running against a project other than the designated sandbox stays forbidden, unconditionally.
+- Running unattended is forbidden **except** from the `integration` workflow against
+  `enduring-badge-506610-u9`.
+
+The exception is deliberately narrow: one workflow, one project. It is not a general licence to
+automate `pulumi up`, and any other unattended invocation still violates SPEC.md.
 
 ## Success Criteria
 
@@ -301,7 +309,7 @@ and Tier B is not built until SPEC.md's boundary is amended in the same commit t
 - [ ] A deliberately bumped `@pulumi/gcp` minor that changes a resource shape fails this tier.
 - [ ] `test/ci.test.ts` asserts the workflow does not trigger on `pull_request`.
 
-**Tier B** (gated on Open Questions)
+**Tier B**
 - [ ] CR-01 verified as *enforced*: a service planned as internal-only is not reachable publicly.
 - [ ] CR-06's provider-vs-API divergence is asserted, so a provider change that closes it fails
       the suite and forces the mapping to be updated.
@@ -316,18 +324,19 @@ and Tier B is not built until SPEC.md's boundary is amended in the same commit t
 
 ## Open Questions
 
-1. **`pulumi up` unattended — the blocking one.** SPEC.md forbids it and Tier B requires it.
-   SPEC.md OQ3 records that this decision *"has not been taken"*; billing is active and the account
-   holds `roles/owner`, so nothing blocks it technically. Amend the boundary to permit unattended
-   `up`/`destroy` **against the designated sandbox only**, or keep the prohibition and ship Tier A
-   alone? Tier A alone leaves every enforcement control unverified and closes only one of the two
-   named gaps.
-2. **Enabling three APIs on the sandbox.** Tier B needs `iam`, `cloudresourcemanager`, and
-   `binaryauthorization` enabled. Enabling them is cheap and reversible, but SPEC.md makes any
-   change to a real GCP project an Ask-first, and enabling `binaryauthorization` in particular
-   interacts with OQ4, which is still open.
-3. **WIF setup is a prerequisite I cannot complete alone.** The pool, provider, and repo binding
-   need someone with org-level access. Confirm who does it, or agree Tier A runs on
-   `workflow_dispatch` with a local credential until WIF exists.
+1. ~~**`pulumi up` unattended.**~~ **RESOLVED 2026-08-25 — approved, sandbox only.**
+   [SPEC.md](SPEC.md#boundaries)'s Never list is amended: unattended `up`/`destroy` is permitted
+   from the `integration` workflow against `enduring-badge-506610-u9`, and forbidden everywhere
+   else. Tier B is unblocked.
+2. ~~**Enabling three APIs on the sandbox.**~~ **RESOLVED 2026-08-25 — approved.**
+   `iam.googleapis.com`, `cloudresourcemanager.googleapis.com` and
+   `binaryauthorization.googleapis.com` may be enabled on the sandbox. The Ask-first gate is
+   satisfied; enabling them is a task in the plan, not yet executed. Note this partly pre-empts
+   [SPEC.md OQ4](SPEC.md#open-questions) (Binary Authorization defaults) — enabling the API does
+   not decide whether BinAuthz defaults on, and OQ4 stays open.
+3. **WIF setup — who performs it.** Approved in principle 2026-08-25, but the pool, provider, and
+   repository binding need org-level access this spec's author does not have. Still to confirm:
+   who runs the setup, and whether Tier A runs on `workflow_dispatch` with a local credential in
+   the meantime. **This gates CI only — both tiers can be built and run locally without it.**
 4. **Ten green nights is a guess.** It is a stand-in for "stable enough to trust". If pre-release
    is the only moment this tier's verdict is acted on, a shorter bar is defensible.
