@@ -71,13 +71,13 @@ is globally unique, 6–30 characters, and must start with a letter. Two of thos
 service name, and neither is enforced today — `SERVICE_NAME` currently allows a leading digit and up
 to 214 characters:
 
-| Rule | Why | Today |
-|------|-----|-------|
-| Name ≤ **19** characters | `-production` is 11, and the id cap is 30 | 214 |
-| Name starts with a **letter** | A project id may not start with a digit, so `2fa` yields the invalid `2fa-staging` | `^[a-z0-9]` |
+| Rule | Why | Status |
+|------|-----|--------|
+| Name ≤ **19** characters | `-production` is 11, and the id cap is 30 | **enforced** |
+| Name starts with a **letter** | A project id may not start with a digit, so `2fa` yields the invalid `2fa-staging` | **enforced** |
 
-Both are validation changes in `runway new`, and both should fail at the point the name is typed —
-long before anyone discovers the problem as a GCP API error during bootstrap.
+Both fail at the point the name is typed, and both messages name the project-id rule behind the
+refusal rather than reporting a bare "invalid name" that would leave someone shortening by guesswork.
 
 **Global uniqueness is the residual risk, and it is accepted rather than solved.** `demo-staging` is
 a plausible id in a namespace shared with every GCP customer, so a team will eventually pick a name
