@@ -18,6 +18,23 @@ const VITEST = "vitest@4.1.11";
 const VITEST_COVERAGE = "@vitest/coverage-v8@4.1.11";
 const WORKSPACE_GLOB = "packages/*";
 
+/**
+ * Where @runway/* is published, and at what version.
+ *
+ * A published version is permanent -- Artifact Registry will not accept
+ * different bytes under the same number -- and every generated repo pins
+ * whatever ships first. 0.1.0 rather than 0.0.0: real, pre-1.0, expect change.
+ */
+const PACKAGE_VERSION = "0.1.0";
+const REGISTRY =
+  "https://europe-west1-npm.pkg.dev/enduring-badge-506610-u9/runway/";
+
+/** Publishable packages carry a version and a registry; the root carries neither. */
+const publishable = (project: typescript.TypeScriptProject): void => {
+  project.package.addField("version", PACKAGE_VERSION);
+  project.package.addField("publishConfig", { registry: REGISTRY });
+};
+
 // Exact pins, per SPEC.md: caret ranges are for dev tooling only. With
 // legacy-peer-deps disabling npm's own compatibility check (see .npmrc below),
 // these pins are what holds the verified combination in place.
@@ -178,6 +195,16 @@ const cli = new typescript.TypeScriptProject({
   description:
     "Scaffolds a minimal, projen-managed repository for a new GCP service.",
   bin: { runway: "lib/cli.js" },
+  // peerDeps, not deps, for the same reason @pulumi/* is a peer of
+  // gcp-components: RunwayServiceProject *extends* projen's TypeScriptProject,
+  // and the consumer's .projenrc.ts imports projen itself. Two copies would put
+  // the subclass on a different class object than the one the consumer resolves,
+  // and projen's component registry would see two unrelated Project types.
+  //
+  // Nothing declared it at all until E9 -- inside the workspace it resolved from
+  // the hoisted root, so every build and test passed while the published tarball
+  // would have failed on `runway new` with MODULE_NOT_FOUND.
+  peerDeps: ["projen@^0.103.2"],
   // yaml is test-only: the CI-workflow tests parse the emitted workflow rather
   // than string-matching it, so a malformed file fails rather than slipping
   // through. Caret range, per SPEC.md: exact pins are for @pulumi/* only.
@@ -232,6 +259,7 @@ const addLintTasks = (project: typescript.TypeScriptProject) => {
 // drops the flag: projen accepts the argument and never forwards it to vitest,
 // so the command reports success having ignored what was asked for.
 cli.testTask.exec("vitest run", { receiveArgs: true });
+publishable(cli);
 addTypecheckTask(cli, "test/tsconfig.json");
 addLintTasks(cli);
 
@@ -435,6 +463,7 @@ const gcpComponents = new typescript.TypeScriptProject({
   tsconfig: { compilerOptions: { ...LANGUAGE_LEVEL } },
 });
 
+publishable(gcpComponents);
 gcpComponents.testTask.exec("vitest run", { receiveArgs: true });
 addTypecheckTask(gcpComponents, "test/tsconfig.json");
 addLintTasks(gcpComponents);
