@@ -52,7 +52,8 @@ diverging in a way worth arguing about, not a reason to add a branch.
 |-----|---------|------------|
 | `gcp:project` | the staging project | the production project |
 | `gcp:region` | required, no default | required, no default |
-| `image` | a tag or a digest | **a digest, always** |
+| `imageTag` | `v1` to start from | **absent** |
+| `imageDigest` | absent | **written by CI at promotion** |
 
 ## Project ids are derived, not passed
 
@@ -87,9 +88,18 @@ like, and reporting it as "not found" would send someone hunting for the wrong p
 
 ## Promotion is a digest, not a rebuild
 
-Production deploys the exact artifact staging ran. `image` in `Pulumi.production.yaml` is a
-`sha256:` digest, never a mutable tag: a tag can be repointed, and then production is running
-something no environment tested.
+Production deploys the exact artifact staging ran, referenced by digest — a tag can be repointed,
+and then production is running something no environment tested.
+
+**A generated `Pulumi.production.yaml` carries no image at all.** There is no digest at scaffold
+time, because the image does not exist yet, and a tag there would be worse than nothing: it would
+satisfy the config and leave production tracking something mutable. CI writes `imageDigest` at
+promotion. Until then production cannot preview, which is the honest state of an environment nothing
+has been promoted to.
+
+The program prefers `imageDigest` over `imageTag` when both are set. That is a branch on
+configuration, not on stack name — production runs a digest because CI configured one, not because
+the program knows which stack it is (SS-01). With neither set it throws, naming both keys.
 
 | Control | |
 |---------|--|

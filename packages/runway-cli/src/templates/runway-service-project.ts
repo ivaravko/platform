@@ -163,6 +163,11 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
           "config:",
           `  gcp:project: ${this.name}-${environment}`,
           `  gcp:region: ${region}`,
+          // Staging starts from a tag. Production deliberately carries no
+          // image: there is nothing to promote yet, and a tag here would leave
+          // production tracking something mutable. CI writes imageDigest at
+          // promotion time.
+          ...(environment === "staging" ? ["  imageTag: v1"] : []),
           "",
         ].join("\n"),
       });
@@ -453,7 +458,18 @@ const renderInfra = (name: string): string =>
     "// Tags are immutable: a pushed tag can never be repointed. Release by",
     "// pushing a NEW tag rather than moving an existing one -- `latest` would",
     "// work exactly once.",
-    'const imageTag = new pulumi.Config().get("imageTag") ?? "v1";',
+    "// Promotion is an artifact moving, not a rebuild. Staging runs a tag;",
+    "// production runs the digest that tag resolved to, written by CI at",
+    "// promotion. A digest wins when both are set -- which is a branch on",
+    "// configuration, never on stack name, so both stacks run this same file.",
+    'const config = new pulumi.Config();',
+    'const imageDigest = config.get("imageDigest");',
+    'const imageTag = config.get("imageTag");',
+    "if (imageDigest === undefined && imageTag === undefined) {",
+    "  throw new Error(",
+    '    "Set imageDigest (production, promoted by CI) or imageTag (staging).",',
+    "  );",
+    "}",
     "",
     'const images = new SecureArtifactRepository("images", {',
     `  repositoryId: "${name}",`,
@@ -473,7 +489,10 @@ const renderInfra = (name: string): string =>
     "// secure default working rather than a misconfiguration.",
     `const service = new SecureContainerService("${name}", {`,
     "  location,",
-    "  image: pulumi.interpolate`${images.imagePrefix}/" + name + ":${imageTag}`,",
+    "  image:",
+    "    imageDigest !== undefined",
+    "      ? pulumi.interpolate`${images.imagePrefix}/" + name + "@${imageDigest}`",
+    "      : pulumi.interpolate`${images.imagePrefix}/" + name + ":${imageTag}`,",
     "  serviceAccount: identity,",
     "});",
     "",

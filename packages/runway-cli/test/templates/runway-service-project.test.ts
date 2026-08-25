@@ -248,6 +248,21 @@ describe("stack configuration", () => {
     expect(stackConfig(env)).toContain("gcp:region: europe-west1");
   });
 
+  it("gives staging a tag to start from", () => {
+    // Staging is where a tag is fine: it is rebuilt constantly and nothing
+    // downstream inherits what it ran.
+    expect(stackConfig("staging")).toContain("imageTag:");
+  });
+
+  it("gives production no image at all until something is promoted", () => {
+    // There is no digest at scaffold time -- the image does not exist yet. A
+    // tag here would be worse than nothing: it would satisfy the config and
+    // leave production tracking something mutable, which is the failure digest
+    // promotion exists to prevent. CI writes imageDigest at promotion.
+    expect(stackConfig("production")).not.toContain("imageTag");
+    expect(stackConfig("production")).not.toContain("imageDigest");
+  });
+
   it("gives the two environments different projects", () => {
     expect(stackConfig("staging")).not.toEqual(stackConfig("production"));
   });
@@ -299,6 +314,16 @@ describe("infra program", () => {
     // would not compile, but it would still teach the wrong shape.
     expect(infra()).toMatch(/serviceAccount: identity/);
     expect(infra()).not.toMatch(/serviceAccountEmail/);
+  });
+
+  it("prefers a digest over a tag, without branching on stack name", () => {
+    // SS-01: the program is identical for both stacks. Preferring a digest when
+    // one is configured is a branch on config, not on environment -- production
+    // gets a digest because CI sets one, not because the program knows it is
+    // production.
+    const source = infra();
+    expect(source).toContain("imageDigest");
+    expect(source).not.toMatch(/stack\s*===|getStack\(\)/);
   });
 
   it("warns that immutable tags mean releasing a new tag, not moving one", () => {
