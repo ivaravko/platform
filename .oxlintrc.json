@@ -20,7 +20,8 @@
     },
     {
       "files": [
-        ".projenrc.ts"
+        ".projenrc.ts",
+        "packages/*/src/templates/**/*.ts"
       ],
       "rules": {
         "no-new": "off"

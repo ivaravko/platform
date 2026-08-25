@@ -226,8 +226,9 @@ new JsonFile(root, ".oxlintrc.json", {
       {
         // `new JsonFile(project, ...)` is projen's idiom — a construct registers
         // itself with its parent in the constructor. The return value is meant
-        // to be discarded.
-        files: [".projenrc.ts"],
+        // to be discarded. This holds wherever projen components are declared:
+        // the projenrc, and the project types runway-cli emits.
+        files: [".projenrc.ts", "packages/*/src/templates/**/*.ts"],
         rules: { "no-new": "off" },
       },
     ],

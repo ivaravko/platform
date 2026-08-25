@@ -505,44 +505,44 @@ without a linter and is already committed — this is the follow-up that closes 
 
 ---
 
-### Task 2: `RunwayServiceProject` — emit a repo that builds
+### ✅ Task 2: `RunwayServiceProject` — emit a repo that builds — DONE
 The mechanism the prototype exists to prove. A custom projen project type that emits the minimum
 buildable repository.
 
 **Acceptance criteria**
-- [ ] `RunwayServiceProject` subclasses `projen.typescript.TypeScriptProject` and is exported
-- [ ] Emits `.projenrc.ts`, `src/index.ts` (health endpoint only), `test/index.test.ts` (one passing
+- [x] `RunwayServiceProject` subclasses `projen.typescript.TypeScriptProject` and is exported
+- [x] Emits `.projenrc.ts`, `src/index.ts` (health endpoint only), `test/index.test.ts` (one passing
       test), `README.md`, `.oxlintrc.json` — and nothing else
-- [ ] Generated `.projenrc.ts` resolves `@runway/cli` via `file:` link so the repo can regenerate itself
-- [ ] No `TODO` markers, commented-out code, or placeholder scaffolding in emitted files
-- [ ] **The scaffold carries the TS 7 survival kit.** The generated repo is itself projen-managed
+- [x] Generated `.projenrc.ts` resolves `@runway/cli` via `file:` link so the repo can regenerate itself
+- [x] No `TODO` markers, commented-out code, or placeholder scaffolding in emitted files
+- [x] **The scaffold carries the TS 7 survival kit.** The generated repo is itself projen-managed
       and TypeScript 7, so it hits every wall the platform hit. Three of these are the difference
       between a scaffold that builds and one that cannot run its first command:
-  - [ ] `projenrcTsOptions: { runner: TypeScriptRunner.nodejs() }` — ts-node throws on TS 7
+  - [x] `projenrcTsOptions: { runner: TypeScriptRunner.nodejs() }` — ts-node throws on TS 7
         (`ts.sys` undefined); without it `npx projen` **fails outright** in the generated repo
-  - [ ] `eslint: false` plus hand-wired oxlint `lint`/`lint:fix` tasks and pinned
+  - [x] `eslint: false` plus hand-wired oxlint `lint`/`lint:fix` tasks and pinned
         `oxlint`/`oxlint-tsgolint` — `typescript-eslint` cannot install alongside TS 7, so without
         this `npm install` fails ERESOLVE
-  - [ ] Its own `.oxlintrc.json` — oxlint finds config by walking up, and a scaffold generated
+  - [x] Its own `.oxlintrc.json` — oxlint finds config by walking up, and a scaffold generated
         outside this monorepo has nothing to walk up to
-  - [ ] `testTask.exec("vitest run", { receiveArgs: true })` — without `receiveArgs`, projen accepts
+  - [x] `testTask.exec("vitest run", { receiveArgs: true })` — without `receiveArgs`, projen accepts
         `-- --coverage` and silently drops it, reporting success having ignored the flag
-- [ ] **No `.npmrc`.** With no `@pulumi/*` dependency the scaffold needs no `legacy-peer-deps`; that
+- [x] **No `.npmrc`.** With no `@pulumi/*` dependency the scaffold needs no `legacy-peer-deps`; that
       escape hatch is a platform-only cost and must not propagate to users' repos
 
 **Verification**
-- [ ] Test scaffolds into a temp dir and runs
+- [x] Test scaffolds into a temp dir and runs
       `npm install && npx projen && npm run build && npm test && npm run lint` — all pass unmodified.
       **Install precedes projen**: `.projenrc.ts` imports `projen` and cannot run before
       `node_modules` exists
-- [ ] Test asserts the exact emitted file tree, no extra files
+- [x] Test asserts the exact emitted file tree, no extra files
       — **amended by Task 4**, which adds `.github/workflows/build.yml` to the expected tree
-- [ ] `npx projen` twice inside the scaffold produces zero diff on the second run
-- [ ] `grep -rE "TODO|FIXME" <scaffold>` returns nothing
-- [ ] Generated line count is reported, excluding lockfiles and projen-generated config, against
+- [x] `npx projen` twice inside the scaffold produces zero diff on the second run
+- [x] `grep -rE "TODO|FIXME" <scaffold>` returns nothing
+- [x] Generated line count is reported, excluding lockfiles and projen-generated config, against
       [criterion 7](../SPEC-runway-cli.md#success-criteria)'s 200-line budget. **If it exceeds 200,
       stop and revise the number deliberately rather than quietly raising it**
-- [ ] Temp dir cleaned up on both pass and fail
+- [x] Temp dir cleaned up on both pass and fail
 
 **Dependencies:** Task 1b
 **Files:** `packages/runway-cli/src/templates/runway-service-project.ts`,
@@ -551,19 +551,19 @@ buildable repository.
 
 ---
 
-### Task 3: `runway new` entry point
+### ✅ Task 3: `runway new` entry point — DONE
 Wire the project type to a command. Parsing and dispatch only — no scaffolding logic here.
 
 **Acceptance criteria**
-- [ ] `runway new <name>` scaffolds via `RunwayServiceProject` into `./<name>`
-- [ ] Refuses a non-empty target directory and writes nothing
-- [ ] Rejects invalid names, including path traversal, before writing anything
-- [ ] `--help` lists the command and its arguments
+- [x] `runway new <name>` scaffolds via `RunwayServiceProject` into `./<name>`
+- [x] Refuses a non-empty target directory and writes nothing
+- [x] Rejects invalid names, including path traversal, before writing anything
+- [x] `--help` lists the command and its arguments
 
 **Verification**
-- [ ] End-to-end test through the CLI binary, not the project type directly; scaffolded repo builds
-- [ ] Non-empty-dir test asserts the pre-existing file is byte-identical afterwards
-- [ ] Traversal fixture (`../escape`) exits non-zero and writes nothing
+- [x] End-to-end test through the CLI binary, not the project type directly; scaffolded repo builds
+- [x] Non-empty-dir test asserts the pre-existing file is byte-identical afterwards
+- [x] Traversal fixture (`../escape`) exits non-zero and writes nothing
 
 **Dependencies:** Task 2
 **Files:** `packages/runway-cli/src/cli.ts`, `packages/runway-cli/src/commands/new.ts`,
