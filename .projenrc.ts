@@ -380,6 +380,14 @@ new JsonFile(root, ".oxlintrc.json", {
 
 // .claude/worktrees/ is where EnterWorktree puts isolated checkouts. Untracked,
 // it would show up in `git status` and break the clean-tree checks each task runs.
-root.gitignore.exclude("dist/", ".tmp-scaffold/", ".claude/worktrees/");
+// .claude/settings.json accumulates local tool-permission entries as they are
+// granted. It is per-machine state, not shared configuration, and this repo is
+// public — it had been carrying a stale email address in recorded commands.
+root.gitignore.exclude(
+  "dist/",
+  ".tmp-scaffold/",
+  ".claude/worktrees/",
+  ".claude/settings.json",
+);
 
 root.synth();
