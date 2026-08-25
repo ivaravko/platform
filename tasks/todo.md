@@ -257,24 +257,24 @@ The component itself, hardened defaults only. Carries **CR-01, CR-04, CR-05, CR-
 
 ---
 
-### C5: Public access path — the justified opt-out
+### ✅ C5: Public access path — the justified opt-out — DONE
 The escape hatch, and the auditability that makes it acceptable. Carries **CR-02, CR-03, CR-08**.
 
 **Acceptance criteria**
-- [ ] `publicAccess: { justification }` simultaneously sets ingress `INGRESS_TRAFFIC_ALL`,
+- [x] `publicAccess: { justification }` simultaneously sets ingress `INGRESS_TRAFFIC_ALL`,
       `defaultUriDisabled: false`, emits one `allUsers` `roles/run.invoker` binding, writes
       `description`, and sets `labels["runway-public"] = "true"`
-- [ ] An empty or whitespace-only justification is **rejected** — it satisfies the type and defeats
+- [x] An empty or whitespace-only justification is **rejected** — it satisfies the type and defeats
       the control
-- [ ] The justification reaches `description` **verbatim**; it is not written to a label, which GCP
+- [x] The justification reaches `description` **verbatim**; it is not written to a label, which GCP
       would reject (label values: lowercase alphanumerics, `-`, `_`, ≤63 chars)
 
 **Verification**
-- [ ] Justification round-trips into `description` unmodified
-- [ ] `labels["runway-public"]` is a valid GCP label value
-- [ ] Public path emits exactly one `ServiceIamMember`; private path emits zero
-- [ ] Empty and whitespace-only justifications both throw
-- [ ] `npm test --workspace @runway/gcp-components -- -t "CR-0[238]"` passes
+- [x] Justification round-trips into `description` unmodified
+- [x] `labels["runway-public"]` is a valid GCP label value
+- [x] Public path emits exactly one `ServiceIamMember`; private path emits zero
+- [x] Empty and whitespace-only justifications both throw
+- [x] `npm test --workspace @runway/gcp-components -- -t "CR-0[238]"` passes
 
 **Dependencies:** C4
 **Files:** `packages/gcp-components/src/container-service/secure-container-service.ts`,
@@ -282,6 +282,23 @@ The escape hatch, and the auditability that makes it acceptable. Carries **CR-02
 **Scope:** S
 
 ---
+
+**Findings worth carrying forward**
+- **Two CR-03 tests were passing for the wrong reason.** Pulumi registers resources
+  *asynchronously*, so reading the mock's resource registry straight after a constructor returns
+  sees an empty list. "Emits exactly one binding" failed loudly and got fixed; **"emits no binding
+  on the private path" passed while proving nothing** — it would have stayed green if the component
+  had emitted an `allUsers` binding on every service. Both now resolve an Output first, and the
+  negative test additionally asserts that *some* resource registered, so absence can never again be
+  indistinguishable from "nothing has happened yet". This is the failure mode negative tests are
+  most prone to and the least likely to be noticed.
+- The invoker binding is assigned to a local and passed to `registerOutputs` rather than
+  constructed as a bare `new`. Not style: oxlint's `no-new` is enabled everywhere except
+  `.projenrc.ts`, so a discarded construction fails the lint gate.
+- **[plan OQ2](plan.md#open-questions) is now concrete and still unanswered.** `runway-public` is
+  both the greppable signal *and* the evidence C7's policy rule will key on. A consumer who removes
+  the label with `gcloud` leaves a service that is still public but invisible to CR-03. Deciding
+  this shapes C7's rule, and C7 is next after C6.
 
 ### C6: Binary Authorization — opt-in
 Carries **CR-09**. Note the verified type has **no attestor field**: it is
