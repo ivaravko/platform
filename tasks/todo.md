@@ -626,28 +626,30 @@ workflow. One emitted file, running the generated repo's own `build` task — wh
 
 ---
 
-### Task 5: Workflow contract — validation, secrets, and the self-mutation caveat
+### ✅ Task 5: Workflow contract — validation, secrets, and the self-mutation caveat — DONE
 Make explicit the two things a green CI run hides: that the workflow bakes in no credentials, and
 that self-mutation needs `PROJEN_GITHUB_TOKEN` and is skipped on fork PRs. Split from Task 4 so
 these negative paths are proven rather than appended to a task that already "works".
 
 **Acceptance criteria**
-- [ ] Generated `README.md` documents the `PROJEN_GITHUB_TOKEN` repository secret: what it is for,
+- [x] Generated `README.md` documents the `PROJEN_GITHUB_TOKEN` repository secret: what it is for,
       what breaks without it, and that self-mutation is skipped on pull requests from forks
-- [ ] No literal credential, project ID, region, or token appears anywhere in `.github/` — only
+- [x] No literal credential, project ID, region, or token appears anywhere in `.github/` — only
       `${{ secrets.* }}` references
-- [ ] Stale projen output fails the build job — verified, not assumed
+- [x] Stale projen output fails the build job — verified, not assumed
 
 **Verification**
-- [ ] `npm test --workspace @runway/cli -- -t "workflow contract"` passes
-- [ ] `grep -rE "AIza|-----BEGIN|ghp_|github_pat_|projects/[0-9]+" <scaffold>/.github` returns nothing
-- [ ] Test asserts every `secrets.` reference in the emitted YAML is in an allowlist of exactly
-      `GITHUB_TOKEN` and `PROJEN_GITHUB_TOKEN` — a new secret cannot appear unnoticed
-- [ ] Test asserts the `self-mutation` job carries both the not-a-fork condition and
+- [x] `npm test --workspace @runway/cli -- -t "workflow contract"` passes
+- [x] `grep -rE "AIza|-----BEGIN|ghp_|github_pat_|projects/[0-9]+" <scaffold>/.github` returns nothing
+- [x] Test asserts every `secrets.` reference in the emitted YAML is in an allowlist.
+      **Criterion tightened: the allowlist is one entry, not two.** The build job runs on the
+      implicit default token and never names it, so `PROJEN_GITHUB_TOKEN` is the sole explicit
+      reference. Asserting two would have permitted a secret that is not actually used.
+- [x] Test asserts the `self-mutation` job carries both the not-a-fork condition and
       `permissions: contents: write`
-- [ ] Test asserts the generated README mentions `PROJEN_GITHUB_TOKEN`, so a later template edit
+- [x] Test asserts the generated README mentions `PROJEN_GITHUB_TOKEN`, so a later template edit
       cannot silently drop the caveat
-- [ ] Stale-output check: mutate a projen-managed file in the scaffold, run the build task, assert
+- [x] Stale-output check: mutate a projen-managed file in the scaffold, run the build task, assert
       a non-zero exit
 
 **Dependencies:** Task 4
