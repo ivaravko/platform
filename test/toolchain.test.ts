@@ -111,3 +111,30 @@ describe("npm config", () => {
   });
 });
 
+describe("task argument forwarding", () => {
+  interface Step {
+    readonly exec?: string;
+    readonly receiveArgs?: boolean;
+  }
+
+  const testStep = (pkg: string): Step => {
+    const tasks = JSON.parse(
+      read("packages", pkg, ".projen", "tasks.json"),
+    ) as { tasks: Record<string, { steps: Step[] }> };
+    const step = tasks.tasks.test.steps.find((s) => s.exec?.includes("vitest"));
+    expect(step, `${pkg} has no vitest step`).toBeDefined();
+    return step as Step;
+  };
+
+  it.each(["runway-cli", "gcp-components"])(
+    "%s forwards args to vitest, so documented flags are not silently dropped",
+    (pkg) => {
+      // Without receiveArgs, projen accepts `-- --coverage` or `-- -t <name>`
+      // and never passes it on: the command exits 0 having ignored what was
+      // asked for. SPEC.md, SPEC-gcp-components.md and the component spec all
+      // document those flags, so a silent no-op there is worse than an error.
+      expect(testStep(pkg).receiveArgs).toBe(true);
+    },
+  );
+});
+

@@ -117,7 +117,8 @@
       "description": "Run tests",
       "steps": [
         {
-          "exec": "vitest run"
+          "exec": "vitest run",
+          "receiveArgs": true
         }
       ]
     },

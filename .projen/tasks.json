@@ -200,6 +200,7 @@
             "npm",
             "update",
             "@types/node",
+            "@vitest/coverage-v8",
             "constructs",
             "oxlint-tsgolint",
             "oxlint",

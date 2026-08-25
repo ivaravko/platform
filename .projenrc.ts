@@ -11,6 +11,9 @@ import { JsonFile, TextFile, javascript, typescript } from "projen";
 const NODE_VERSION = "22.18.0";
 const TYPESCRIPT_VERSION = "7.0.2";
 const VITEST = "vitest@4.1.11";
+// SPEC.md sets an 80% line-coverage floor per package, and three spec files
+// document `-- --coverage`. Without this the flag fails MISSING DEPENDENCY.
+const VITEST_COVERAGE = "@vitest/coverage-v8@4.1.11";
 const WORKSPACE_GLOB = "packages/*";
 
 // Exact pins, per SPEC.md: caret ranges are for dev tooling only. With
@@ -47,7 +50,7 @@ const root = new typescript.TypeScriptProject({
   projenrcTs: true,
   // Node's own type stripping needs no compiler API, unlike ts-node.
   projenrcTsOptions: { runner: typescript.TypeScriptRunner.nodejs() },
-  devDeps: [VITEST, "oxlint@1.80.0", "oxlint-tsgolint@7.0.2001"],
+  devDeps: [VITEST, VITEST_COVERAGE, "oxlint@1.80.0", "oxlint-tsgolint@7.0.2001"],
   // The root holds only repo-level invariant tests; there is no src/ to compile.
   // rootDir must widen to "." to match: projen defaults it to srcdir, which
   // would make `tsc --noEmit` at the root fail TS6059 on its own test files.
@@ -71,7 +74,7 @@ const cli = new typescript.TypeScriptProject({
   description:
     "Scaffolds a minimal, projen-managed repository for a new GCP service.",
   bin: { runway: "lib/cli.js" },
-  devDeps: [VITEST],
+  devDeps: [VITEST, VITEST_COVERAGE],
 });
 
 /**
@@ -98,7 +101,10 @@ const addLintTasks = (project: typescript.TypeScriptProject) => {
 };
 
 // --- runway-cli -------------------------------------------------------------
-cli.testTask.exec("vitest run");
+// receiveArgs, or `npm test --workspace @runway/cli -- --coverage` silently
+// drops the flag: projen accepts the argument and never forwards it to vitest,
+// so the command reports success having ignored what was asked for.
+cli.testTask.exec("vitest run", { receiveArgs: true });
 addLintTasks(cli);
 
 // --- root -------------------------------------------------------------------
@@ -134,10 +140,10 @@ const gcpComponents = new typescript.TypeScriptProject({
   // makes that the consumer's problem. projen also pins them as devDeps
   // (peerDependencyOptions.pinnedDevDependency), so tests still resolve them.
   peerDeps: [PULUMI, PULUMI_GCP],
-  devDeps: [VITEST],
+  devDeps: [VITEST, VITEST_COVERAGE],
 });
 
-gcpComponents.testTask.exec("vitest run");
+gcpComponents.testTask.exec("vitest run", { receiveArgs: true });
 addLintTasks(gcpComponents);
 
 /**

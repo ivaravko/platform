@@ -2,8 +2,10 @@
  * Public surface of `@runway/gcp-components`.
  *
  * Consumers import from here and never deep-import. Components are exported as
- * they are built — C3 adds the first.
+ * they are built.
  */
+
+export { assertUserManagedServiceAccount } from "./container-service/service-account-email";
 
 /**
  * Pulumi type-string namespace for every component in this package.

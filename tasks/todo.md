@@ -141,24 +141,24 @@ scratch; this reproduces it inside the repo.
 
 ## Phase B: Component
 
-### C3: Service-account email validator
+### ✅ C3: Service-account email validator — DONE
 `assertUserManagedServiceAccount` — a pure function, no Pulumi, no mocks. Carries **CR-04**, the
 control now doing the most work because the typed `SecureServiceAccount` guarantee is deferred.
 
 **Acceptance criteria**
-- [ ] Positive rule: accepts only `<id>@<project>.iam.gserviceaccount.com`. Google-managed defaults
+- [x] Positive rule: accepts only `<id>@<project>.iam.gserviceaccount.com`. Google-managed defaults
       are rejected **by falling outside the rule**, not by being enumerated
-- [ ] Known defaults (compute, App Engine, Cloud Build) are pattern-matched **only to improve the
+- [x] Known defaults (compute, App Engine, Cloud Build) are pattern-matched **only to improve the
       error message** — never as the security boundary
-- [ ] Errors name the corrective action, not just the fault
-- [ ] Exported from the package's `src/index.ts`
+- [x] Errors name the corrective action, not just the fault
+- [x] Exported from the package's `src/index.ts`
 
 **Verification**
-- [ ] Table-driven test over the three Google-managed defaults, a human email, and a malformed
+- [x] Table-driven test over the three Google-managed defaults, a human email, and a malformed
       address — each asserting rejection *and* that the message names the fix
-- [ ] Boundary cases: 6-character id accepted, 5 rejected; 30 accepted, 31 rejected
-- [ ] Leading digit, uppercase, and trailing hyphen rejected
-- [ ] `npm test --workspace @runway/gcp-components -- -t "CR-04"` passes
+- [x] Boundary cases: 6-character id accepted, 5 rejected; 30 accepted, 31 rejected
+- [x] Leading digit, uppercase, and trailing hyphen rejected
+- [x] `npm test --workspace @runway/gcp-components -- -t "CR-04"` passes
 
 **Dependencies:** C2
 **Files:** `packages/gcp-components/src/container-service/service-account-email.ts`,
@@ -167,6 +167,26 @@ control now doing the most work because the typed `SecureServiceAccount` guarant
 **Scope:** S
 
 ---
+
+**Findings worth carrying forward**
+- **This task's own verification command was a silent no-op.**
+  `npm test --workspace @runway/gcp-components -- -t "CR-04"` ran the *entire* suite and exited 0.
+  projen accepts trailing args and never forwards them to the step, so the filter was ignored
+  without any warning. Fixed with `receiveArgs: true` on both packages' test steps, and
+  `test/toolchain.test.ts` now asserts it so the silence cannot return. **The same trap applies to
+  every other projen task in this repo** — `lint` included — for any flag someone passes after `--`.
+- **`--coverage` was doubly broken.** Once args actually forwarded, it failed
+  `MISSING DEPENDENCY @vitest/coverage-v8`. That flag is documented in three spec files and
+  [SPEC.md](../SPEC.md#testing-strategy) sets an 80% line-coverage floor, so the provider was added
+  (a devDep, not gated by the ask-first rule on *runtime* deps). gcp-components now reports 92.3%.
+- **The positive rule's guarantee is narrower than it first appears, and the code says so.**
+  Some Google-managed *service agents* do live under `.iam.gserviceaccount.com` (e.g.
+  `service-<n>@gcf-admin-robot.iam.gserviceaccount.com`) and will pass. What CR-04 actually
+  guarantees is that the over-privileged **default runtime identities** cannot be used — not that
+  the account is never Google-managed. Overclaiming that in a security control would be worse than
+  the gap itself.
+- A test asserts an *unlisted* future Google default is still rejected, proving the hint list is
+  only cosmetic and the positive rule is the real boundary.
 
 ### C4: SecureContainerService — private default path
 The component itself, hardened defaults only. Carries **CR-01, CR-04, CR-05, CR-06, CR-07**.

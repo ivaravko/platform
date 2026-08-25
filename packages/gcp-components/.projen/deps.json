@@ -6,6 +6,11 @@
       "type": "build"
     },
     {
+      "name": "@vitest/coverage-v8",
+      "version": "4.1.11",
+      "type": "build"
+    },
+    {
       "name": "typescript",
       "version": "7.0.2",
       "type": "build"
