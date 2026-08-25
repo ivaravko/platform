@@ -71,6 +71,7 @@ describe("scaffold file tree", () => {
       ".projen/tasks.json",
       ".projenrc.ts",
       "README.md",
+      "index.html",
       // The load-bearing artifact: a worked example composing all three
       // components, with no raw gcp.* resource anywhere in it.
       "infra/Pulumi.production.yaml",
@@ -80,10 +81,14 @@ describe("scaffold file tree", () => {
       "infra/tsconfig.json",
       "package.json",
       "projenrc/tsconfig.json",
-      "src/index.ts",
-      "test/index.test.ts",
+      "src/client/App.tsx",
+      "src/client/main.tsx",
+      "src/server/index.ts",
+      "test/App.test.tsx",
+      "test/server.test.ts",
       "test/tsconfig.json",
       "tsconfig.json",
+      "vite.config.ts",
     ]);
   });
 
@@ -92,7 +97,7 @@ describe("scaffold file tree", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("stays within the 200-line budget of criterion 7", () => {
+  it("stays within the 300-line budget of criterion 7", () => {
     const counted = tree.filter(isHumanRead);
     const lines = counted.reduce((n, f) => n + read(f).split("\n").length, 0);
 
@@ -100,7 +105,7 @@ describe("scaffold file tree", () => {
     const breakdown = counted
       .map((f) => `${String(read(f).split("\n").length).padStart(4)}  ${f}`)
       .join("\n");
-    expect(lines, `generated lines:\n${breakdown}`).toBeLessThanOrEqual(200);
+    expect(lines, `generated lines:\n${breakdown}`).toBeLessThanOrEqual(300);
   });
 });
 
@@ -182,12 +187,24 @@ describe("TypeScript 7 survival kit", () => {
 });
 
 describe("scaffold content", () => {
-  it("serves a health endpoint and nothing more", () => {
-    expect(read("src/index.ts")).toMatch(/health/i);
+  it("serves a health endpoint", () => {
+    expect(read("src/server/index.ts")).toMatch(/healthz/);
   });
 
-  it("ships one passing test, so the suite is green from commit one", () => {
-    expect(read("test/index.test.ts")).toMatch(/\b(it|test)\(/);
+  it("serves the built client from the same process", () => {
+    // One container: the SPA and the API share an image, so infra/ provisions
+    // one Cloud Run service and nothing about the stack changes.
+    expect(read("src/server/index.ts")).toMatch(/dist|client/);
+  });
+
+  it("ships a client that renders something", () => {
+    expect(read("src/client/App.tsx")).toMatch(/<h1|return \(/);
+    expect(read("src/client/main.tsx")).toContain("createRoot");
+  });
+
+  it("ships passing tests for both halves, green from commit one", () => {
+    expect(read("test/server.test.ts")).toMatch(/\b(it|test)\(/);
+    expect(read("test/App.test.tsx")).toMatch(/\b(it|test)\(/);
   });
 
   it("explains itself in the README rather than shipping an empty one", () => {

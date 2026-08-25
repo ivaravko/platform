@@ -119,17 +119,24 @@ changes the entry-point shape. Spec'd here as a standalone `bin` for now.
 | `react`, `react-dom` | The client |
 | `vite` | Client bundle, and `vitest` already shares its config — no second build tool |
 | `@vitejs/plugin-react` | JSX transform |
-| `happy-dom` (or `jsdom`) | vitest needs a DOM to render a component into |
+| `happy-dom` | vitest needs a DOM to render a component into |
+| `@testing-library/react`, `@testing-library/dom` | Rendering a component in a test; the second is a peer of the first and must be declared |
 
 Four runtime and dev additions to a repo that previously had none beyond vitest, which
 [SPEC.md](SPEC.md#boundaries) makes ask-first. They were asked for and agreed together with the SPA
 itself; adding a fifth is a fresh decision.
 
-**An unverified risk, recorded because this repo has been bitten twice already.** TypeScript 7 broke
-ts-node and made `typescript-eslint` uninstallable. Vite transpiles with esbuild and never loads the
-TypeScript compiler API, so it *should* be unaffected — but "should" is what was said about the
-other two. **Verify `react` + `vite` + `@types/react` against TypeScript 7.0.2 before building any
-of this**, and if it fails, that is a decision to bring back, not a version to quietly pin down.
+**The TypeScript 7 risk was real enough to check, and it passed.** ts-node broke and
+`typescript-eslint` became uninstallable on 7, so react + vite + `@types/react` was verified against
+7.0.2 before any of this was built: installs with no peer conflict, `tsc --noEmit` typechecks JSX
+cleanly, and `vite build` produces a bundle. Vite transpiles with esbuild and never loads the
+compiler API, which is why.
+
+**The DOM environment is set per file, not globally.** `environment: "happy-dom"` in `vite.config.ts`
+applies a browser to *every* test, and a browser applies same-origin policy — which blocks the
+server test's own `fetch` to `127.0.0.1`. The component test carries a
+`// @vitest-environment happy-dom` docblock instead, so the default stays `node`. Found by running a
+generated repo's suite, not by reading.
 
 ## Project Structure
 

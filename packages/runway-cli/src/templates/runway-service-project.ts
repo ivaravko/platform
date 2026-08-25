@@ -42,6 +42,27 @@ const TYPESCRIPT_VERSION = "7.0.2";
 const PULUMI = "@pulumi/pulumi@3.259.0";
 const PULUMI_GCP = "@pulumi/gcp@9.35.1";
 const VITEST = "vitest@4.1.11";
+/**
+ * The generated service is a React SPA served by a Node process.
+ *
+ * vite rather than a second bundler because vitest already shares its config,
+ * and happy-dom because a component test needs something to render into.
+ * Verified against TypeScript 7: vite transpiles with esbuild and never loads
+ * the compiler API, so none of the ts-node breakage applies.
+ */
+const CLIENT = [
+  "react@^19",
+  "react-dom@^19",
+] as const;
+const CLIENT_DEV = [
+  "@types/react@^19",
+  "@types/react-dom@^19",
+  "vite@^7",
+  "@vitejs/plugin-react@^5",
+  "happy-dom@^20",
+  "@testing-library/react@^16",
+  "@testing-library/dom@^10",
+] as const;
 const OXLINT = "oxlint@1.80.0";
 const OXLINT_TSGOLINT = "oxlint-tsgolint@7.0.2001";
 
@@ -97,11 +118,30 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
       // vitest over jest, and oxlint over eslint, matching the platform.
       jest: false,
       eslint: false,
-      devDeps: [VITEST, OXLINT, OXLINT_TSGOLINT, `@runway/cli@${runwayCli}`],
+      devDeps: [
+        VITEST,
+        OXLINT,
+        OXLINT_TSGOLINT,
+        ...CLIENT_DEV,
+        `@runway/cli@${runwayCli}`,
+      ],
+
+      // JSX and the DOM lib are what let tsc typecheck the client at all.
+      tsconfig: {
+        compilerOptions: {
+          jsx: javascript.TypeScriptJsxMode.REACT_JSX,
+          lib: ["es2023", "dom"],
+        },
+      },
 
       // The components the infra program composes. A `file:` link while
       // @runway/gcp-components is unpublished; D7 swaps it for a version.
-      deps: [PULUMI, PULUMI_GCP, `@runway/gcp-components@${componentsPackage()}`],
+      deps: [
+        PULUMI,
+        PULUMI_GCP,
+        `@runway/gcp-components@${componentsPackage()}`,
+        ...CLIENT,
+      ],
 
       // One workflow, running the repo's own `build` task — which chains
       // compile, test and lint, so a single job gates all three.
@@ -138,6 +178,7 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
     });
 
     this.addStackConfig(options.region);
+    this.addClientBuild();
     this.testTask.exec("vitest run", { receiveArgs: true });
     this.addLintTasks();
     this.addOxlintConfig();
@@ -172,6 +213,21 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
         ].join("\n"),
       });
     }
+  }
+
+  /**
+   * The client is bundled by vite, not by tsc.
+   *
+   * `compile` emits the server to lib/; this emits the client to dist/client,
+   * which the server serves. Two build steps because they produce two different
+   * kinds of artifact, not because the project is split.
+   */
+  private addClientBuild(): void {
+    const client = this.addTask("compile:client", {
+      description: "Bundle the React client into dist/client",
+      exec: "vite build",
+    });
+    this.compileTask.spawn(client);
   }
 
   /** projen has no oxlint component, so the tasks are registered by hand. */
@@ -251,12 +307,74 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
       ].join("\n"),
     });
 
-    new SampleFile(this, "src/index.ts", {
+    new SampleFile(this, "index.html", {
       contents: [
+        "<!doctype html>",
+        '<html lang="en">',
+        "  <head>",
+        '    <meta charset="utf-8" />',
+        `    <title>${this.name}</title>`,
+        "  </head>",
+        "  <body>",
+        '    <div id="root"></div>',
+        '    <script type="module" src="/src/client/main.tsx"></script>',
+        "  </body>",
+        "</html>",
+        "",
+      ].join("\n"),
+    });
+
+    new SampleFile(this, "src/client/App.tsx", {
+      contents: [
+        "export const App = (): React.JSX.Element => (",
+        `  <h1>${this.name} is running</h1>`,
+        ");",
+        "",
+      ].join("\n"),
+    });
+
+    new SampleFile(this, "src/client/main.tsx", {
+      contents: [
+        `import { createRoot } from "react-dom/client";`,
+        `import { App } from "./App";`,
+        "",
+        'const root = document.getElementById("root");',
+        "if (root !== null) {",
+        "  createRoot(root).render(<App />);",
+        "}",
+        "",
+      ].join("\n"),
+    });
+
+    new SampleFile(this, "vite.config.ts", {
+      contents: [
+        `import react from "@vitejs/plugin-react";`,
+        `import { defineConfig } from "vite";`,
+        "",
+        "export default defineConfig({",
+        "  plugins: [react()],",
+        "  // The server serves this directory; keep the two in step.",
+        `  build: { outDir: "dist/client" },`,
+        "});",
+        "",
+      ].join("\n"),
+    });
+
+    new SampleFile(this, "src/server/index.ts", {
+      contents: [
+        `import { readFile } from "node:fs/promises";`,
         `import { createServer } from "node:http";`,
+        `import { basename, extname, join } from "node:path";`,
         "",
         "/** Cloud Run supplies PORT; 8080 is its default. */",
         "const port = Number(process.env.PORT ?? 8080);",
+        `const clientDir = join(__dirname, "..", "..", "dist", "client");`,
+        "",
+        "const contentTypes: Record<string, string> = {",
+        `  ".html": "text/html",`,
+        `  ".js": "text/javascript",`,
+        `  ".css": "text/css",`,
+        "};",
         "",
         "export const server = createServer((req, res) => {",
         `  if (req.url === "/healthz") {`,
@@ -264,10 +382,25 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
         `    res.end(JSON.stringify({ status: "ok" }));`,
         "    return;",
         "  }",
-        "  res.writeHead(404).end();",
+        "",
+        "  // Everything else is the single-page app. Only the basename is used,",
+        "  // so a crafted URL cannot walk out of the client directory.",
+        `  const requested = (req.url ?? "/").split("?")[0];`,
+        `  const file = requested === "/" ? "index.html" : basename(requested);`,
+        "",
+        "  readFile(join(clientDir, file))",
+        "    .then((body) => {",
+        "      res.writeHead(200, {",
+        `        "content-type": contentTypes[extname(file)] ?? "application/octet-stream",`,
+        "      });",
+        "      res.end(body);",
+        "    })",
+        "    .catch(() => {",
+        "      res.writeHead(404).end();",
+        "    });",
         "});",
         "",
-        "if (process.env.NODE_ENV !== \"test\") {",
+        'if (process.env.NODE_ENV !== "test") {',
         "  server.listen(port);",
         "}",
         "",
@@ -335,10 +468,10 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
 
     this.gitignore.exclude("infra/lib/");
 
-    new SampleFile(this, "test/index.test.ts", {
+    new SampleFile(this, "test/server.test.ts", {
       contents: [
         `import { describe, expect, it } from "vitest";`,
-        `import { server } from "../src";`,
+        `import { server } from "../src/server";`,
         "",
         `describe("health endpoint", () => {`,
         `  it("reports ok", async () => {`,
@@ -356,6 +489,27 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
         `    expect(await response.json()).toEqual({ status: "ok" });`,
         "",
         "    server.close();",
+        "  });",
+        "});",
+        "",
+      ].join("\n"),
+    });
+
+    new SampleFile(this, "test/App.test.tsx", {
+      contents: [
+        "// @vitest-environment happy-dom",
+        "//",
+        "// Per-file, not global: a browser environment applies same-origin policy,",
+        "// which blocks the server test's own fetch to 127.0.0.1.",
+        `import { render, screen } from "@testing-library/react";`,
+        `import { describe, expect, it } from "vitest";`,
+        `import { App } from "../src/client/App";`,
+        "",
+        `describe("App", () => {`,
+        `  it("renders a heading", () => {`,
+        "    render(<App />);",
+        "",
+        `    expect(screen.getByRole("heading")).toBeTruthy();`,
         "  });",
         "});",
         "",
