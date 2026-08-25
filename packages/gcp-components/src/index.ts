@@ -5,12 +5,9 @@
  * they are built.
  */
 
+export { TYPE_NAMESPACE } from "./type-namespace";
 export { assertUserManagedServiceAccount } from "./container-service/service-account-email";
-
-/**
- * Pulumi type-string namespace for every component in this package.
- *
- * Components register as `runway:gcp:<Component>`, so this is the one place the
- * prefix is written down.
- */
-export const TYPE_NAMESPACE = "runway:gcp";
+export {
+  SecureContainerService,
+  type SecureContainerServiceArgs,
+} from "./container-service/secure-container-service";

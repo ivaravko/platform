@@ -11,8 +11,10 @@ Eight tasks, four checkpoints. Rationale, verified toolchain findings, and risks
 
 Strictly sequential. C5 and C6 both depend on C4 but edit the same file, so they do not parallelise.
 
-The **runway-cli prototype tasks are deferred, not dropped** — see [Deferred](#deferred-runway-cli-prototype)
-at the bottom. Component tasks use a `C` prefix so that plan's numbering stays valid.
+**runway-cli is a second, parallel stream** — see [Active (parallel stream): runway-cli](#active-parallel-stream-runway-cli)
+at the bottom. Tasks 2–5 there were deferred and are now resumed; they touch a different package and
+run concurrently with C3–C8, sharing only the root `.projenrc.ts`. Component tasks use a `C` prefix
+so that stream's numbering stays valid.
 
 ---
 
@@ -188,29 +190,43 @@ control now doing the most work because the typed `SecureServiceAccount` guarant
 - A test asserts an *unlisted* future Google default is still rejected, proving the hint list is
   only cosmetic and the positive rule is the real boundary.
 
-### C4: SecureContainerService — private default path
+### ⚠️ C4: SecureContainerService — private default path — DONE, one criterion unmet
 The component itself, hardened defaults only. Carries **CR-01, CR-04, CR-05, CR-06, CR-07**.
 
 **Acceptance criteria**
-- [ ] Three required args (`location`, `image`, `serviceAccountEmail`) produce: ingress
+- [x] Three required args (`location`, `image`, `serviceAccountEmail`) produce: ingress
       `INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER`, `defaultUriDisabled: true`,
       `deletionProtection: true`, no IAM member, no `description`, no `runway-public` label
-- [ ] `invokerIamDisabled` is **not exposed and never set** — it disables the IAM check on
+- [x] `invokerIamDisabled` is **not exposed and never set** — it disables the IAM check on
       `run.routes.invoke`, a wider hole than `allUsers` and invisible in an IAM policy dump
-- [ ] `serviceAccountEmail` validates synchronously for a plain string and inside `.apply()` for an
+- [x] `serviceAccountEmail` validates synchronously for a plain string and inside `.apply()` for an
       `Output`; the arg stays `pulumi.Input<string>` so C-future can accept `SecureServiceAccount.email`
       without a breaking change
-- [ ] `deletionProtection` opt-out is the discriminated justified form, matching the house convention
-- [ ] TSDoc on `uri` states that the private path disables default-URI resolution, and TSDoc on the
+- [x] `deletionProtection` opt-out is the discriminated justified form, matching the house convention
+- [x] TSDoc on `uri` states that the private path disables default-URI resolution, and TSDoc on the
       class states a default-constructed service is **unreachable until a load balancer is added** —
       otherwise the first developer to hit it "fixes" it with `publicAccess`
-- [ ] `vpcAccess`, `encryptionKey`, and `iapEnabled` appear **nowhere** in the args interface
+- [x] `vpcAccess`, `encryptionKey`, and `iapEnabled` appear **nowhere** in the args interface
 
 **Verification**
-- [ ] One named `it` per control, named after its control-mapping row
-- [ ] Assertions are on resolved `Output` values, never on constructor arguments
-- [ ] Both validation paths tested: plain string throws at construction; `Output` rejects on resolution
-- [ ] `npm test --workspace @runway/gcp-components` passes with no `GOOGLE_APPLICATION_CREDENTIALS`
+- [x] One named `it` per control, named after its control-mapping row
+- [x] Assertions are on resolved `Output` values, never on constructor arguments
+- [ ] ~~Both validation paths tested: plain string throws at construction; `Output` rejects on
+      resolution~~ — **NOT MET. The failing-`Output` half is not unit-testable here.**
+      An Output's value is unknown at construction, so the check runs inside `apply`, and a throw
+      there is observable only as a rejected promise. `Output` exposes no rejection path in its
+      public type, and its internal one spawns promise chains nothing can attach to: a bare
+      `pulumi.output(x).apply(() => { throw })` leaks **two** unhandled rejections even when the
+      caller catches the one promise it can reach. **vitest exits 1 on unhandled rejections**
+      (measured), so such a test fails the suite while passing itself. The only lever is
+      `dangerouslyIgnoreUnhandledErrors`, which would disable that protection for every test in the
+      package — a real safety net traded for one assertion. Declined.
+      **Covered instead:** the validator is exhaustively tested in `service-account-email.test.ts`
+      (21 cases), and a passing test proves the component runs it inside `apply` on an `Output`
+      input. The one untested link is that Pulumi fails a deployment when an input's `apply` throws
+      — Pulumi's behaviour, not this component's. The rationale is recorded in the test file so it
+      is not rediscovered as a missing test.
+- [x] `npm test --workspace @runway/gcp-components` passes with no `GOOGLE_APPLICATION_CREDENTIALS`
 
 **Dependencies:** C3
 **Files:** `packages/gcp-components/src/container-service/secure-container-service.ts`,
@@ -219,6 +235,19 @@ The component itself, hardened defaults only. Carries **CR-01, CR-04, CR-05, CR-
 **Scope:** M
 
 ---
+
+**Findings worth carrying forward**
+- **A decision for the checkpoint.** The failing-`Output` gap exists only because
+  `serviceAccountEmail` is `pulumi.Input<string>`. Narrowing it to a plain `string` would make
+  CR-04 fully synchronous, fully testable, and impossible to get wrong — at the cost of the
+  migration path the component spec chose it for: passing `SecureServiceAccount.email` (an
+  `Output`) later without a breaking change. Worth deciding deliberately rather than inheriting.
+- **Pulumi mocks must supply provider-computed outputs.** With only `args.inputs`, anything the
+  real provider derives — a Cloud Run service's `uri` — resolves to `undefined`, and an assertion
+  like `toBeDefined()` fails while `toBeUndefined()` would have *passed for the wrong reason*.
+  `test/setup.ts` now returns a mocked `uri` for `gcp:cloudrunv2/service:Service`.
+- `TYPE_NAMESPACE` moved from `index.ts` to its own module. Components need it, `index.ts`
+  re-exports the components, and importing it from the barrel would close that loop.
 
 ### ✅ Checkpoint: Private Default Works
 - [ ] A service built from three args alone is private, protected, and running under a validated SA
@@ -359,15 +388,24 @@ than no doc, because it reads as proof.
 ---
 ---
 
-## Deferred: runway-cli prototype
+## Active (parallel stream): runway-cli
 
-Not dropped. These tasks were the active plan until the Cloud Run component took priority; their
+**Resumed.** These were deferred while the Cloud Run component took priority; their original
 rationale is preserved verbatim at
-[tasks/runway-cli-prototype-plan.md](runway-cli-prototype-plan.md).
+[tasks/runway-cli-prototype-plan.md](runway-cli-prototype-plan.md), and the refresh is in
+[tasks/plan.md](plan.md#runway-cli-tasks-25-refreshed).
 
-**One amendment is owed when they resume:** every path below assumes the package sits at the repo
-root. After C1 it lives at `packages/runway-cli`, so file paths and commands in Tasks 2–5 need
-updating. That is a C1 consequence, not a regression in those tasks.
+The amendment this section anticipated has now been applied: paths sit under `packages/runway-cli`,
+and `--workspace @runway/cli` is correct again now that real workspaces exist.
+
+**Runs in parallel with C3–C8** — different packages, different source trees. The one shared file is
+the root `.projenrc.ts`, where every subproject is declared; sequence edits to it rather than
+assuming they merge.
+
+**Scope, decided deliberately:** no `infra/` in the scaffold, and CLI surface limited to `new` plus
+generated CI. `SecureServiceAccount` and `SecureArtifactRepository` do not exist, so
+[SPEC-runway-cli.md](../SPEC-runway-cli.md#success-criteria) criteria **2, 3, 6 and 7 stay unmet by
+this stream**. That is a cut, not an oversight — revisit at the checkpoint.
 
 ### ✅ Task 1: Bootstrap the CLI package — DONE
 A single projen-managed TypeScript package. Not a monorepo — there is only one module in scope.
@@ -431,22 +469,42 @@ buildable repository.
 
 **Acceptance criteria**
 - [ ] `RunwayServiceProject` subclasses `projen.typescript.TypeScriptProject` and is exported
-- [ ] Emits `.projenrc.ts`, `src/index.ts` (health endpoint only), `test/index.test.ts` (one passing test), `README.md`
-- [ ] Emits an oxlint setup matching the platform's — `eslint: false`, a `lint` task, pinned
-      `oxlint`/`oxlint-tsgolint`, and a generated `.oxlintrc.json`. This is what lets the scaffold
-      pin TS 7 and still honour the "build, test, lint" output its spec advertises.
+- [ ] Emits `.projenrc.ts`, `src/index.ts` (health endpoint only), `test/index.test.ts` (one passing
+      test), `README.md`, `.oxlintrc.json` — and nothing else
 - [ ] Generated `.projenrc.ts` resolves `@runway/cli` via `file:` link so the repo can regenerate itself
 - [ ] No `TODO` markers, commented-out code, or placeholder scaffolding in emitted files
+- [ ] **The scaffold carries the TS 7 survival kit.** The generated repo is itself projen-managed
+      and TypeScript 7, so it hits every wall the platform hit. Three of these are the difference
+      between a scaffold that builds and one that cannot run its first command:
+  - [ ] `projenrcTsOptions: { runner: TypeScriptRunner.nodejs() }` — ts-node throws on TS 7
+        (`ts.sys` undefined); without it `npx projen` **fails outright** in the generated repo
+  - [ ] `eslint: false` plus hand-wired oxlint `lint`/`lint:fix` tasks and pinned
+        `oxlint`/`oxlint-tsgolint` — `typescript-eslint` cannot install alongside TS 7, so without
+        this `npm install` fails ERESOLVE
+  - [ ] Its own `.oxlintrc.json` — oxlint finds config by walking up, and a scaffold generated
+        outside this monorepo has nothing to walk up to
+  - [ ] `testTask.exec("vitest run", { receiveArgs: true })` — without `receiveArgs`, projen accepts
+        `-- --coverage` and silently drops it, reporting success having ignored the flag
+- [ ] **No `.npmrc`.** With no `@pulumi/*` dependency the scaffold needs no `legacy-peer-deps`; that
+      escape hatch is a platform-only cost and must not propagate to users' repos
 
 **Verification**
-- [ ] Test scaffolds into a temp dir and runs `npm install && npx projen && npm run build && npm test && npm run lint` — all pass unmodified
+- [ ] Test scaffolds into a temp dir and runs
+      `npm install && npx projen && npm run build && npm test && npm run lint` — all pass unmodified.
+      **Install precedes projen**: `.projenrc.ts` imports `projen` and cannot run before
+      `node_modules` exists
 - [ ] Test asserts the exact emitted file tree, no extra files
       — **amended by Task 4**, which adds `.github/workflows/build.yml` to the expected tree
+- [ ] `npx projen` twice inside the scaffold produces zero diff on the second run
 - [ ] `grep -rE "TODO|FIXME" <scaffold>` returns nothing
+- [ ] Generated line count is reported, excluding lockfiles and projen-generated config, against
+      [criterion 7](../SPEC-runway-cli.md#success-criteria)'s 200-line budget. **If it exceeds 200,
+      stop and revise the number deliberately rather than quietly raising it**
 - [ ] Temp dir cleaned up on both pass and fail
 
-**Dependencies:** Task 1
-**Files:** `src/templates/runway-service-project.ts`, `src/index.ts`, `test/runway-service-project.test.ts`
+**Dependencies:** Task 1b
+**Files:** `packages/runway-cli/src/templates/runway-service-project.ts`,
+`packages/runway-cli/src/index.ts`, `packages/runway-cli/test/templates/runway-service-project.test.ts`
 **Scope:** M
 
 ---
@@ -466,7 +524,8 @@ Wire the project type to a command. Parsing and dispatch only — no scaffolding
 - [ ] Traversal fixture (`../escape`) exits non-zero and writes nothing
 
 **Dependencies:** Task 2
-**Files:** `src/cli.ts`, `src/commands/new.ts`, `test/cli.test.ts`
+**Files:** `packages/runway-cli/src/cli.ts`, `packages/runway-cli/src/commands/new.ts`,
+`packages/runway-cli/test/cli.test.ts`
 **Scope:** S
 
 ---
@@ -497,15 +556,15 @@ workflow. One emitted file, running the generated repo's own `build` task — wh
       `pullRequestTemplate: false`, and `githubOptions: { mergify: false, pullRequestLint: false }`
 - [ ] The emitted `.github/` tree is exactly `.github/workflows/build.yml` — no release, upgrade,
       PR-lint, mergify, or PR-template files
-- [ ] `workflowNodeVersion` matches the project's `minNodeVersion` (Node 22 per
-      [SPEC.md](../SPEC.md#tech-stack)); `workflowPackageCache: true` sets `cache: "npm"`
+- [ ] `workflowNodeVersion` matches `minNodeVersion` exactly — `22.18.0`, the `NODE_VERSION`
+      constant in the root `.projenrc.ts`; `workflowPackageCache: true` sets `cache: "npm"`
 - [ ] Workflow triggers are `pull_request`, `push` to `main`, and `workflow_dispatch`
 - [ ] The emitted job contains **no** package-manager setup action — under npm, projen adds no
       counterpart to the `pnpm/action-setup@v5` step it emits for PNPM
       (`projen/lib/javascript/node-project.js:623-628`)
 
 **Verification**
-- [ ] `npm test -- -t "ci workflow"` passes
+- [ ] `npm test --workspace @runway/cli -- -t "ci workflow"` passes
 - [ ] Build-out test (extending Task 2's): scaffold to a temp dir, then
       `npm install && npx projen && npm run build && npm run lint` still passes with the workflow present
 - [ ] Test parses the emitted YAML and asserts job `build` exists with steps in order:
@@ -514,8 +573,9 @@ workflow. One emitted file, running the generated repo's own `build` task — wh
 - [ ] `npx projen` twice in the scaffold produces zero diff on the second run
 
 **Dependencies:** Task 2
-**Files:** `src/templates/runway-service-project.ts`, `test/templates/ci-workflow.test.ts` (new),
-`test/runway-service-project.test.ts` (file-tree assertion amended)
+**Files:** `packages/runway-cli/src/templates/runway-service-project.ts`,
+`packages/runway-cli/test/templates/ci-workflow.test.ts` (new),
+`packages/runway-cli/test/templates/runway-service-project.test.ts` (file-tree assertion amended)
 **Scope:** S — 3 files, one an amendment
 
 ---
@@ -533,7 +593,7 @@ these negative paths are proven rather than appended to a task that already "wor
 - [ ] Stale projen output fails the build job — verified, not assumed
 
 **Verification**
-- [ ] `npm test -- -t "workflow contract"` passes
+- [ ] `npm test --workspace @runway/cli -- -t "workflow contract"` passes
 - [ ] `grep -rE "AIza|-----BEGIN|ghp_|github_pat_|projects/[0-9]+" <scaffold>/.github` returns nothing
 - [ ] Test asserts every `secrets.` reference in the emitted YAML is in an allowlist of exactly
       `GITHUB_TOKEN` and `PROJEN_GITHUB_TOKEN` — a new secret cannot appear unnoticed
@@ -545,8 +605,8 @@ these negative paths are proven rather than appended to a task that already "wor
       a non-zero exit
 
 **Dependencies:** Task 4
-**Files:** `src/files/readme.ts` (wherever Task 2 puts the README template),
-`test/templates/workflow-contract.test.ts` (new)
+**Files:** `packages/runway-cli/src/files/readme.ts` (wherever Task 2 puts the README template),
+`packages/runway-cli/test/templates/workflow-contract.test.ts` (new)
 **Scope:** S
 
 ---

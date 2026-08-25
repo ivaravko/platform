@@ -164,3 +164,99 @@ Per task, on top of each task's own acceptance criteria:
    verification was done against 9.35.1. C2 must pin one of them deliberately.
 5. **Package registry and scope** ([SPEC.md OQ2](../SPEC.md#open-questions)) — `@runway/*` is a
    placeholder. Affects nothing before publishing, but C1 hard-codes the scope in two package names.
+
+---
+
+# runway-cli: Tasks 2–5, refreshed
+
+Second, parallel stream. Spec: [SPEC-runway-cli.md](../SPEC-runway-cli.md). Tasks:
+[todo.md](todo.md#active-parallel-stream-runway-cli). Original rationale preserved verbatim at
+[tasks/runway-cli-prototype-plan.md](runway-cli-prototype-plan.md).
+
+## Context
+
+These tasks were deferred when the Cloud Run component took priority. C1 and C2 have since landed,
+so they no longer match the repo: they were written for a single package at the root, with no
+workspaces, no oxlint, no Pulumi, and before TypeScript 7's breakages were known. Executing them as
+written would fail immediately. This refresh un-defers them.
+
+## Scope, decided deliberately
+
+**No `infra/` in the scaffold.** [SPEC-runway-cli.md](../SPEC-runway-cli.md#success-criteria)
+criterion 3 wants three resource groups — service account, artifact repository, Cloud Run service.
+Only `SecureContainerService` is specced, and it is unbuilt until C4/C5; the other two have no spec
+and no plan. The scaffold therefore stays Pulumi-free for now.
+
+**Criteria 2, 3, 6 and 7 remain unmet by this stream.** Criterion 5 is covered by Task 3. This is a
+cut, not an oversight — `infra/` returns when the components it must compose exist.
+
+One upside: with no `@pulumi/*` dependency the generated repo needs **no `.npmrc`**. The
+`legacy-peer-deps=true` escape hatch is a platform-only cost and does not propagate to users' repos.
+
+**CLI surface is `new` plus generated CI.** `runway doctor`, `--dry-run`, `--force` and the
+Dockerfile stay deferred.
+
+## The scaffold inherits the platform's TS 7 survival kit
+
+The substantive change to Task 2, and the reason it is more than a path refresh. The generated repo
+is itself projen-managed and TypeScript 7, so it hits every wall the platform hit:
+
+| Constraint | Why the scaffold needs it |
+|---|---|
+| `projenrcTsOptions: { runner: TypeScriptRunner.nodejs() }` | ts-node throws on TS 7 (`ts.sys` undefined). Without it, `npx projen` **fails outright** in the generated repo. |
+| `eslint: false` + hand-wired oxlint tasks | `typescript-eslint` cannot install alongside TS 7. Without it, `npm install` fails ERESOLVE. |
+| Its own `.oxlintrc.json` | oxlint finds config by walking up. The root config governs `packages/*`, but a scaffold generated **outside** this monorepo has nothing to walk up to. |
+| `testTask.exec("vitest run", { receiveArgs: true })` | Without `receiveArgs`, projen accepts `-- --coverage` and silently drops it, reporting success having ignored the flag. |
+| `npm install` **before** `npx projen` | `.projenrc.ts` imports `projen`; it cannot execute before `node_modules` exists. |
+
+Three of the five are the difference between a scaffold that builds and one that cannot run its
+first command. They are findings from Tasks 1/1b and C2, and the scaffold gets them only if Task 2
+deliberately puts them there.
+
+## What else changed
+
+- Paths move under `packages/runway-cli/`.
+- **`--workspace` comes back.** The deferred tasks stripped it because the prototype was a single
+  root package; with real workspaces `npm test --workspace @runway/cli -- -t "..."` is correct again.
+- Task 2's file-tree assertion now expects `.oxlintrc.json`; Task 4 still amends it for
+  `.github/workflows/build.yml`.
+- `workflowNodeVersion` is `22.18.0` — the `NODE_VERSION` constant — not a loose "Node 22".
+- `bin: { runway: "lib/cli.js" }` is already declared on the `cli` subproject in `.projenrc.ts`;
+  Task 3 fills a target that is already wired.
+
+## Dependency Graph
+
+```
+[done] Task 1 ── Task 1b
+                    └── Task 2  RunwayServiceProject + TS 7 survival kit
+                           ├── Task 3  runway new — entry point and guardrails  ─┐ disjoint files,
+                           └── Task 4  Emit the CI workflow                       │ may run in
+                                  └── Task 5  Workflow contract and validation ──┘ parallel
+```
+
+**This stream and C3–C8 are independent** — different packages, different source trees.
+
+**One shared file: the root `.projenrc.ts`,** where every subproject is declared. Sections are
+delimited (`--- runway-cli ---`), so collisions are textually local, but sequence edits to that file
+rather than assuming they merge.
+
+## Risks and Mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| The scaffold omits a survival-kit item and fails on the user's first `npx projen` | **High** — it is the module's whole promise | Every row above is a Task 2 acceptance criterion, and the build-out test runs the real commands in a temp dir rather than asserting file contents. |
+| `.projenrc.ts` contention between the two streams | Medium | Delimited sections; sequence edits to that file. |
+| Build-out tests are slow — a real `npm install` per scaffold | Medium | One shared temp-dir fixture reused across assertions, warm npm cache. Revisit if the gate exceeds ~3 min. |
+| `file:` linking an unpublished `@runway/cli` diverges from the published path users get | Medium | Prototype debt; the swap is one line. The published path stays unproven until release. |
+| Criteria 2, 3, 6, 7 unmet | Accepted | Stated here and in todo.md, so the gap is visible at the checkpoint rather than discovered later. |
+
+## Open Questions
+
+1. **Does `infra/` re-enter after C4/C5?** The scaffold could then compose one real component with
+   the service-account email from Pulumi config. That still would not satisfy criterion 3's three
+   resource groups, so criterion 3 needs either amending or the two missing components. Decide at
+   the checkpoint.
+2. **Should SPEC-runway-cli's success criteria be amended now?** Four of seven are unreachable by
+   design. Leaving them keeps the target honest; amending them keeps the spec describing what is
+   actually being built. Recommendation: leave them, track the gap here — but decide rather than drift.
+3. **`git init` in the scaffold?** Unresolved from the original plan; assumed no.

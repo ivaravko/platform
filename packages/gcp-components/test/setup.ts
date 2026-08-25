@@ -17,11 +17,24 @@ import * as pulumi from "@pulumi/pulumi";
 void pulumi.runtime.setMocks({
   newResource: (args: pulumi.runtime.MockResourceArgs) => ({
     id: `${args.name}_id`,
-    state: args.inputs,
+    // Provider-computed outputs the mock must stand in for: with only `inputs`,
+    // anything the real provider derives (a Cloud Run service's uri) resolves to
+    // undefined and assertions on it would pass for the wrong reason.
+    state:
+      args.type === "gcp:cloudrunv2/service:Service"
+        ? { ...args.inputs, uri: `https://${args.name}-mocked-ew.a.run.app` }
+        : args.inputs,
   }),
   call: (args: pulumi.runtime.MockCallArgs) => args.inputs,
 });
 
-/** Resolves an Output to its value. Outputs are not promises; they need apply. */
+/**
+ * Resolves an Output to its value.
+ *
+ * Success only. `apply` has no rejection path, so a failing Output leaves this
+ * promise pending and the test times out instead of failing usefully. Asserting
+ * on a *failing* Output is not possible here at all — see the note on
+ * `secure-container-service.test.ts` about unhandled rejections.
+ */
 export const resolve = <T>(output: pulumi.Output<T>): Promise<T> =>
   new Promise((res) => output.apply(res));
