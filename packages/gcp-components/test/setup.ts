@@ -1,4 +1,5 @@
 import * as pulumi from "@pulumi/pulumi";
+import { SecureServiceAccount } from "../src/service-account/secure-service-account";
 
 /**
  * Shared Pulumi test harness.
@@ -102,3 +103,20 @@ const computedOutputs = (
  */
 export const resolve = <T>(output: pulumi.Output<T>): Promise<T> =>
   new Promise((res) => output.apply(res));
+
+let serviceAccountCount = 0;
+
+/**
+ * A `SecureServiceAccount` for tests that need a runtime identity.
+ *
+ * Names are unique per call because Pulumi resource names must be. The email it
+ * yields under mocks is `api-runtime@my-proj.iam.gserviceaccount.com`, matching
+ * what the real provider derives from the same inputs.
+ */
+export const testServiceAccount = (): SecureServiceAccount => {
+  serviceAccountCount += 1;
+  return new SecureServiceAccount(`test-sa-${String(serviceAccountCount)}`, {
+    accountId: "api-runtime",
+    project: "my-proj",
+  });
+};

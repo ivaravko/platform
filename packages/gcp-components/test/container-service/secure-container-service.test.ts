@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import * as pulumi from "@pulumi/pulumi";
-import { resolve } from "../setup";
-import { SecureContainerService } from "../../src/container-service/secure-container-service";
+import { resolve, testServiceAccount } from "../setup";
+import {
+  SecureContainerService,
+  type SecureContainerServiceArgs,
+} from "../../src/container-service/secure-container-service";
 
 /**
  * SecureContainerService — the private default path.
@@ -22,7 +24,7 @@ const defaults = (name: string): SecureContainerService =>
   new SecureContainerService(name, {
     location: "europe-west1",
     image: IMAGE,
-    serviceAccountEmail: SA,
+    serviceAccount: testServiceAccount(),
   });
 
 describe("SecureContainerService: private default path", () => {
@@ -35,17 +37,6 @@ describe("SecureContainerService: private default path", () => {
   it("CR-04: passes the validated service account to the revision template", async () => {
     const template = await resolve(defaults("cr04").service.template);
     expect(template.serviceAccount).toBe(SA);
-  });
-
-  it("CR-04: rejects a Google-managed default identity at construction", () => {
-    expect(
-      () =>
-        new SecureContainerService("cr04-bad", {
-          location: "europe-west1",
-          image: IMAGE,
-          serviceAccountEmail: "123456789-compute@developer.gserviceaccount.com",
-        }),
-    ).toThrow(/Compute Engine/);
   });
 
   it("CR-05: never sets invokerIamDisabled", async () => {
@@ -66,7 +57,7 @@ describe("SecureContainerService: private default path", () => {
     const svc = new SecureContainerService("cr06-opt", {
       location: "europe-west1",
       image: IMAGE,
-      serviceAccountEmail: SA,
+      serviceAccount: testServiceAccount(),
       deletionProtection: { disableJustification: "ephemeral preview environment" },
     });
     await expect(resolve(svc.service.deletionProtection)).resolves.toBe(false);
@@ -108,48 +99,38 @@ describe("SecureContainerService: surfaces cut from v1", () => {
   });
 });
 
-describe("SecureContainerService: service account validation paths", () => {
-  it("throws synchronously when given a plain string", () => {
-    // The fast path. A literal is the common case and should fail at the call
-    // site, not several seconds later during preview.
-    expect(
-      () =>
-        new SecureContainerService("sync-bad", {
-          location: "europe-west1",
-          image: IMAGE,
-          serviceAccountEmail: "dev@example.com",
-        }),
-    ).toThrow(/iam\.gserviceaccount\.com/);
-  });
-
-  /**
-   * **The failing-Output path is deliberately not asserted here, and that is a
-   * gap, not an oversight.**
-   *
-   * An Output's value is unknown at construction, so the check can only run
-   * inside `apply`, and a throw there is only observable as a rejected promise.
-   * `Output` exposes no rejection path in its public type, and its internal one
-   * spawns promise chains nothing can attach to: a bare
-   * `pulumi.output(x).apply(() => { throw })` leaks two unhandled rejections
-   * even when the caller catches the one promise it can reach. **vitest exits 1
-   * on unhandled rejections**, so any such test fails the suite while passing
-   * itself. The only lever is `dangerouslyIgnoreUnhandledErrors`, which would
-   * switch that protection off for every test in the package.
-   *
-   * What is covered instead: the validator is exhaustively tested in
-   * `service-account-email.test.ts`, and the passing case below proves the
-   * component really does run it inside `apply` on an Output input. The single
-   * untested link is that Pulumi fails a deployment when an input's `apply`
-   * throws — which is Pulumi's behaviour, not this component's.
-   */
-  it("accepts a valid Output", async () => {
-    const svc = new SecureContainerService("async-good", {
+describe("CR-04: the default identity is unreachable, not merely rejected", () => {
+  it("rejects a bare email string at compile time", () => {
+    // A compile-time assertion, and a live one: `npm test` spawns
+    // `tsc --noEmit -p test/tsconfig.json`. If the argument ever widens back to
+    // a string, @ts-expect-error becomes unused and tsc fails.
+    //
+    // This replaces C4's runtime check. That check had a half nothing could
+    // test: an Output's value is unknown at construction, so validation ran
+    // inside `apply`, and a throw there is observable only as a rejected
+    // promise that leaks unhandled rejections vitest treats as fatal. The gap
+    // is gone rather than documented, because there is no longer a string to
+    // validate.
+    const args: SecureContainerServiceArgs = {
       location: "europe-west1",
       image: IMAGE,
-      serviceAccountEmail: pulumi.output(SA),
+      // @ts-expect-error a service account is a SecureServiceAccount, never an
+      // email string -- which is what makes the default compute identity
+      // impossible to name.
+      serviceAccount: "123456789-compute@developer.gserviceaccount.com",
+    };
+    expect(args).toBeDefined();
+  });
+
+  it("derives the runtime identity from the component, not from a caller string", async () => {
+    const sa = testServiceAccount();
+    const svc = new SecureContainerService("typed-sa", {
+      location: "europe-west1",
+      image: IMAGE,
+      serviceAccount: sa,
     });
     const template = await resolve(svc.service.template);
-    expect(template.serviceAccount).toBe(SA);
+    await expect(resolve(sa.email)).resolves.toBe(template.serviceAccount);
   });
 });
 

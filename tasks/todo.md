@@ -160,28 +160,28 @@ The third v1 component. Independent of D2 — disjoint files, safe to run in par
 - Verified live: a raw repository with mutable tags, scanning disabled and dry-run retention fails a
   real `pulumi preview` with all three AR violations. Ten policies now registered.
 
-### D4: `SecureContainerService` takes a `SecureServiceAccount`
+### ✅ D4: `SecureContainerService` takes a `SecureServiceAccount` — DONE
 Closes [spec OQ1](../SPEC-secure-container-service.md#open-questions) and C4's documented gap. A
 breaking change, taken deliberately while it is still free.
 
 **Acceptance criteria**
-- [ ] `serviceAccountEmail: pulumi.Input<string>` becomes `serviceAccount: SecureServiceAccount`,
+- [x] `serviceAccountEmail: pulumi.Input<string>` becomes `serviceAccount: SecureServiceAccount`,
       making the default compute identity **unreachable through the type system** — the guarantee
       the module spec promised and v1 downgraded
-- [ ] C4's untestable failing-`Output` path is **gone, not worked around**: with no string argument
+- [x] C4's untestable failing-`Output` path is **gone, not worked around**: with no string argument
       there is no `apply`-time validation left to test, and the note in
       `secure-container-service.test.ts` explaining the gap is removed rather than left stale
-- [ ] CR-04's policy rule is unchanged — raw resources still bypass the type system, so the runtime
+- [x] CR-04's policy rule is unchanged — raw resources still bypass the type system, so the runtime
       check stays where it still matters
-- [ ] [SPEC-secure-container-service.md](../SPEC-secure-container-service.md) updated: scope
+- [x] [SPEC-secure-container-service.md](../SPEC-secure-container-service.md) updated: scope
       decision 1 currently records the string form as a deliberate reduction, and that stops being
       true
 
 **Verification**
-- [ ] A type-level test (`@ts-expect-error`) proves a bare string is rejected — **mutation-tested**,
+- [x] A type-level test (`@ts-expect-error`) proves a bare string is rejected — **mutation-tested**,
       since an unused directive is exactly the silent-pass C6 caught
-- [ ] Every existing CR-01/04/05/06/07 test still passes, adjusted only for the new argument
-- [ ] Root suite green; `npx projen` idempotent
+- [x] Every existing CR-01/04/05/06/07 test still passes, adjusted only for the new argument
+- [x] Root suite green; `npx projen` idempotent
 
 **Dependencies:** D2
 **Files:** `packages/gcp-components/src/container-service/secure-container-service.ts`,
@@ -189,6 +189,21 @@ its tests, `SPEC-secure-container-service.md`
 **Scope:** M
 
 ---
+
+**Findings worth carrying forward**
+- **C4's gap is gone rather than documented.** With no string argument there is no `apply`-time
+  validation left, so the path vitest could not test does not exist. That is the difference between
+  closing a gap and working around one — and it is why the plan put D4 before publishing.
+- The `@ts-expect-error` assertion is **mutation-tested**: widening the argument back to
+  `SecureServiceAccount | string` makes `tsc` fail with an unused directive. Without that check it
+  would look like coverage while asserting nothing, which is the same silent-pass C6 caught.
+- **The runtime check stayed where it still matters.** `assertUserManagedServiceAccount` is
+  unchanged and still backs CR-04's policy rule: a consumer writing a raw `gcp.cloudrunv2.Service`
+  bypasses the type system entirely. The type guards this component, the policy pack guards the rest
+  — deleting the validator because "the type handles it now" would have removed the half that covers
+  everyone who never uses the component.
+- The C6 typecheck gate earned its keep again: the mechanical swap left four unused symbols that
+  vitest was perfectly happy with and `tsc --noEmit` rejected.
 
 ### ✅ Checkpoint: v1 component set complete
 - [ ] All three v1 components exist, exported, each with controls, tests, policy rules and mapping rows

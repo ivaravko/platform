@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { allPolicies, resourcePolicies, stackPolicies } from "../../src/policy/policies";
 import { hasJustification } from "../../src/policy/cloud-run-rules";
-import { resolve } from "../setup";
+import { resolve, testServiceAccount } from "../setup";
 import { SecureContainerService } from "../../src/container-service/secure-container-service";
 
 /**
@@ -72,7 +72,7 @@ describe("component and policy pack agree", () => {
     const svc = new SecureContainerService("contract", {
       location: "europe-west1",
       image: "europe-west1-docker.pkg.dev/p/r/api:v1",
-      serviceAccountEmail: "api-runtime@my-proj.iam.gserviceaccount.com",
+      serviceAccount: testServiceAccount(),
       publicAccess: { justification: "handles public webhooks from Stripe" },
     });
     const description = await resolve(svc.service.description);
@@ -83,7 +83,7 @@ describe("component and policy pack agree", () => {
     const svc = new SecureContainerService("contract-private", {
       location: "europe-west1",
       image: "europe-west1-docker.pkg.dev/p/r/api:v1",
-      serviceAccountEmail: "api-runtime@my-proj.iam.gserviceaccount.com",
+      serviceAccount: testServiceAccount(),
     });
     const description = await resolve(svc.service.description);
     expect(hasJustification(description)).toBe(false);

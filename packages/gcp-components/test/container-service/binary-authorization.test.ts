@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolve } from "../setup";
+import { resolve, testServiceAccount } from "../setup";
 import {
   SecureContainerService,
   type SecureContainerServiceArgs,
@@ -16,7 +16,6 @@ import {
  * the policy, out of band.
  */
 
-const SA = "api-runtime@my-proj.iam.gserviceaccount.com";
 const IMAGE = "europe-west1-docker.pkg.dev/p/r/api:v1";
 const POLICY = "projects/my-proj/platforms/cloudRun/prod-policy";
 
@@ -27,7 +26,7 @@ const service = (
   new SecureContainerService(name, {
     location: "europe-west1",
     image: IMAGE,
-    serviceAccountEmail: SA,
+    serviceAccount: testServiceAccount(),
     binaryAuthorization,
   });
 
