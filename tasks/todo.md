@@ -14,21 +14,28 @@ Tasks 3 and 4 are independent and may run in parallel once Task 2 is green.
 
 ## Phase 1: Scaffolding
 
-### Task 1: Bootstrap the CLI package
+### ✅ Task 1: Bootstrap the CLI package — DONE
 A single projen-managed TypeScript package. Not a monorepo — there is only one module in scope.
 
 **Acceptance criteria**
-- [ ] `.projenrc.ts` declares one `typescript.TypeScriptProject` with a `bin` entry
-- [ ] `packageManager: NodePackageManager.NPM` is set **explicitly** — projen falls back to
+- [x] `.projenrc.ts` declares one `typescript.TypeScriptProject` with a `bin` entry
+- [x] `packageManager: NodePackageManager.NPM` is set **explicitly** — projen falls back to
       `YARN_CLASSIC` with a deprecation warning when the option is omitted
       (`projen/lib/javascript/node-package.js:249-252`), so silence yields a `yarn.lock`
-- [ ] TypeScript 7.0.2 and vitest 4.1.11 resolve and run — **if projen cannot drive TS 7, stop and report rather than silently pinning TS 5.x**
-- [ ] `.gitignore` covers `node_modules/`, `dist/`, and temp scaffold output
+- [x] TypeScript 7.0.2 and vitest 4.1.11 resolve and run — **if projen cannot drive TS 7, stop and report rather than silently pinning TS 5.x**
+      → **Reported and resolved by decision.** TS 7 is the native compiler and exposes no JS
+      compiler API, which breaks ts-node and typescript-eslint. `tsc` and vitest are unaffected.
+      Chosen: keep TS 7, run `.projenrc.ts` via `TypeScriptRunner.nodejs()`, drop ESLint until
+      [typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940).
+- [x] `.gitignore` covers `node_modules/`, `dist/`, and temp scaffold output
 
 **Verification**
-- [ ] `npx projen && npm install && npm run build && npm test && npm run lint` passes from a clean clone
-- [ ] `npx projen` twice produces zero diff on the second run (`git diff --exit-code`)
-- [ ] `package-lock.json` is generated and no `yarn.lock` or `pnpm-lock.yaml` appears
+- [x] `npm install && npx projen && npm run build && npm test` passes from a clean clone.
+      **Install comes first** — `npx projen` executes `.projenrc.ts`, which imports `projen`, so it
+      cannot run before `node_modules` exists. No lint step; ESLint is disabled, see
+      [SPEC.md](../SPEC.md#tech-stack)
+- [x] `npx projen` twice produces zero diff on the second run (`git diff --exit-code`)
+- [x] `package-lock.json` is generated and no `yarn.lock` or `pnpm-lock.yaml` appears
 
 **Dependencies:** None
 **Files:** `.projenrc.ts`, `.gitignore` (+ projen-generated `package.json`, `tsconfig.json`)

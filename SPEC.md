@@ -44,7 +44,8 @@ Versions verified against the npm registry and the local toolchain on 2026-08-24
 
 | Concern            | Choice                     | Version   |
 |--------------------|----------------------------|-----------|
-| Language           | TypeScript                 | `7.0.2`   |
+| Language           | TypeScript                 | `7.0.2` (native compiler — see below) |
+| Linter             | none — blocked on TS 7     | —         |
 | Runtime            | Node.js                    | `>=22`, dev on `26.3.0` |
 | Repo/build manager | projen                     | `0.103.2` |
 | Package manager    | npm workspaces             | `>=10`, dev on `11.16.0` |
@@ -53,6 +54,20 @@ Versions verified against the npm registry and the local toolchain on 2026-08-24
 | Policy as code     | `@pulumi/policy`           | `1.21.0`  |
 | Test runner        | vitest                     | `4.1.11`  |
 | Pulumi CLI         | `pulumi`                   | `3.246.0` (installed) |
+
+**TypeScript 7 is the native compiler, and it has no JS compiler API.** `typescript@7.0.2` exports
+exactly two symbols (`version`, `versionMajorMinor`) — no `ts.sys`, no `ts.createProgram`. Two
+consequences, both verified rather than assumed:
+
+- **ts-node cannot run**, so projen's default projenrc runner fails. `.projenrc.ts` is executed by
+  Node's own type stripping instead (`TypeScriptRunner.nodejs()`), which needs no compiler API.
+  This is why `minNodeVersion` is `22.18.0`.
+- **There is no linter.** `typescript-eslint` throws on import — *"typescript-eslint does not
+  support TS 7.0"* — and its peer range caps at `<6.1.0`, so it cannot even install. ESLint is
+  disabled until [typescript-eslint#10940](https://github.com/typescript-eslint/typescript-eslint/issues/10940)
+  ships TS 7 support. **Reinstate the lint gate when it does.**
+
+`tsc` and vitest both work on TS 7 — only the tools that link against the compiler API are affected.
 
 **Monorepo mechanics.** projen natively supports subprojects via `parent` + `outdir` on `Project`
 (verified in `projen/lib/project.d.ts:34,46`). The root `.projenrc.ts` declares both packages. All
@@ -84,9 +99,6 @@ npm run build --workspaces
 
 # Test with coverage
 npm test --workspaces -- --coverage
-
-# Lint, autofixing what is fixable
-npx eslint --fix
 
 # Typecheck without emitting
 npx tsc --noEmit
@@ -233,8 +245,9 @@ export class SecureContainerService extends pulumi.ComponentResource {
 
 ## Success Criteria
 
-1. `npx projen && npm install && npm run build --workspaces && npm test --workspaces` passes from a
-   clean clone with no GCP credentials present.
+1. `npm install && npx projen && npm run build --workspaces && npm test --workspaces` passes from a
+   clean clone with no GCP credentials present. Install precedes `projen`: `.projenrc.ts` imports
+   `projen`, so it cannot execute before `node_modules` exists.
 2. `runway new my-service` produces a repo that, unmodified, passes its own `build`, `test`, `lint`.
 3. That generated repo's `pulumi preview` succeeds against a real GCP project and plans exactly:
    one Artifact Registry repo, one service account, one Cloud Run service — and nothing public.

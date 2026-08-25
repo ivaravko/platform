@@ -75,12 +75,20 @@ Deliberately lighter than the full-scope bar — this is a prototype, and saying
 than pretending it clears a production gate.
 
 - [ ] Acceptance criteria met and verified by running it, not by typechecking
-- [ ] `npm run build`, `npm test`, `npm run lint` pass
+- [ ] `npm run build` and `npm test` pass (no lint — ESLint disabled, blocked on TS 7)
 - [ ] No `any`, no dead code, no `TODO` markers in generated output
 - [ ] Human review before the task is checked off
 
 ## Open Questions
 
+0. **Does the *generated* repo pin TypeScript 7 too — and therefore also lose its linter?**
+   Decided in Task 1 for the platform package only. If the scaffold inherits TS 7, it inherits the
+   typescript-eslint block, and three things stop being true:
+   [SPEC-runway-cli.md](../SPEC-runway-cli.md#scaffold-output)'s "build, test, lint" scaffold
+   output, its build-out chain and success criterion 1, and Task 4's claim that one CI job covers
+   build/test/lint. The generated repo could instead pin TypeScript 6.0.3 and keep its lint gate —
+   the scaffold's TS version need not match the platform's. **Decide at the start of Task 2**;
+   nothing before it depends on the answer.
 1. **Does the prototype need to prove more than scaffolding?** If seeing a Pulumi stack deploy is
    the point, that is a different prototype and needs `gcp-components` first.
 2. **Distribution** — a `bin`, `npx`, or a projen external project type? Task 3 assumes a plain
