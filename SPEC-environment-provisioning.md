@@ -116,6 +116,31 @@ principalSet://iam.googleapis.com/projects/<n>/locations/global/workloadIdentity
 with the provider's attribute condition additionally pinning `assertion.ref == 'refs/heads/main'`.
 Repository alone is insufficient: a pull request from a fork runs in the repository's context.
 
+### Identity federation is per service
+
+Each service gets its own Workload Identity Pool and provider, living **in that service's production
+project** — not one shared pool for the organisation.
+
+The argument is entirely about what happens when EP-02 is got wrong, which is the likeliest mistake
+in this module. With a shared pool, a single permissive attribute condition exposes *every* service's
+production to any repository in the org; the condition becomes the only thing standing between
+unrelated teams. With a per-service pool the same mistake exposes one service, and it is the service
+whose team made it. Blast radius follows ownership.
+
+The cost is more objects — one pool and one provider per service — which is immaterial when they sit
+one-per-project rather than accumulating in a shared one.
+
+Two consequences worth stating rather than discovering:
+
+- **The pool arrives with production.** A staging-only service has no pool at all, which is
+  consistent with EP-07: the boundary exists once there is something to protect.
+- **Pool ids are reserved after deletion.** GCP soft-deletes workload identity pools and providers
+  and holds the id for roughly 30 days, so tearing a service down and re-bootstrapping it under the
+  same name will fail on a name collision, not on permissions. The error is confusing enough that
+  the module should detect a soft-deleted pool and say so plainly, offering `undelete` rather than a
+  raw `ALREADY_EXISTS`. **Confirm the retention window against current GCP docs at implementation
+  time** — the behaviour is long-standing but the number is worth checking rather than trusting.
+
 ## Tech Stack
 
 Inherits [SPEC.md](SPEC.md#tech-stack). Module-specific:
@@ -213,7 +238,7 @@ packages/environment-provisioning/
 │  ├─ index.ts                  → Public surface
 │  ├─ service-environment.ts    → The component: one adopted project, its IAM, its state prefix
 │  ├─ audit.ts                  → EP-06: refuse a production project with human deploy bindings
-│  ├─ workload-identity.ts      → Pool, provider, and the repository/ref-scoped binding
+│  ├─ workload-identity.ts      → Per-service pool and provider, repository/ref-scoped binding
 │  └─ roles.ts                  → The deploy role set, one definition consumed by both environments
 └─ test/                        → Mirrors src/
 ```
@@ -317,12 +342,15 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 8. Bootstrap **fails with an actionable message** if the org bootstrap-state bucket does not exist,
    printing the `gcloud storage buckets create` command that fixes it. It does not create the bucket
    itself — that is the one resource this module deliberately does not manage.
-9. **Adopting a production project that already grants a human a deploy-capable role fails**, names
+9. The WIF pool and provider live in the service's own production project; no pool is shared
+   between services, and re-bootstrapping over a soft-deleted pool fails with an actionable message
+   rather than `ALREADY_EXISTS`.
+10. **Adopting a production project that already grants a human a deploy-capable role fails**, names
    every offending binding, and changes nothing (EP-06).
-10. No GCP project is created or deleted by any code path in this module.
-11. Bootstrap **succeeds with `--staging-project` alone**, and reports the service as incomplete,
+11. No GCP project is created or deleted by any code path in this module.
+12. Bootstrap **succeeds with `--staging-project` alone**, and reports the service as incomplete,
     naming the controls not yet in force (EP-07).
-12. Adding `--production-project` later provisions production and leaves staging's IAM bindings and
+13. Adding `--production-project` later provisions production and leaves staging's IAM bindings and
     state bucket unchanged — verified by comparing before and after, not by inspection.
 
 ## Open Questions
@@ -333,9 +361,8 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 2. ~~Where does the bootstrap stack's own state live long-term?~~ **Resolved: a hand-made org
    bootstrap-state bucket, with per-environment service state buckets created by this module.** See
    [The bootstrap paradox](#the-bootstrap-paradox-and-its-answer).
-3. **One WIF pool per service, or one per org?** Per-service is more isolated and multiplies
-   objects; per-org is tidier and makes the attribute condition the only thing standing between
-   services. Per-service is the safer default; confirm.
+3. ~~One WIF pool per service, or one per org?~~ **Resolved: one per service**, in that service's
+   production project. See [Identity federation is per service](#identity-federation-is-per-service).
 4. **How does a team remediate an EP-06 failure?** The module refuses and reports, which is right,
    but it leaves the operator holding a list of bindings and no guidance. A documented runbook is
    probably enough; a `--fix` flag would re-introduce exactly the silent removal EP-06 forbids.
