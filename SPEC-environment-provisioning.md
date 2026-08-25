@@ -57,6 +57,34 @@ that granted it, and this module has no way to know why it exists — a bootstra
 someone's access is worse than one that stops and asks. Remediation is a decision for a human who
 knows the project's history.
 
+### What "deploy-capable" means
+
+`roles/run.admin` is the reference. It is the role that lets a principal create and update Cloud Run
+services, which is what "deploy" means for a service on this paved road.
+
+**The check matches permissions, not role names.** This distinction is the whole control. A binding
+of `roles/editor` grants every permission in `roles/run.admin` and then some, so a check comparing
+role *names* would wave through a project where an entire team can deploy to production by hand —
+EP-06 would report success while being false, which is worse than not having it. So `roles.ts`
+defines the deploy verbs:
+
+```
+run.services.create
+run.services.update
+run.services.setIamPolicy
+```
+
+and EP-06 asks, of every human principal in the production project's IAM policy: **does the union of
+your roles contain any of these?** `roles/owner` and `roles/editor` are caught by construction rather
+than by being listed, and so is a custom role that happens to include them — which is the case a
+name-based check has no way to see.
+
+**Deliberately not included: `roles/iam.serviceAccountUser`.** Holding it alone does not let anyone
+deploy; it becomes interesting only in combination with the verbs above, which the check already
+catches. Adding it would flag principals who merely need to impersonate a service account for
+unrelated reasons, and a control that cries wolf gets switched off. Worth revisiting if a real
+escalation path through it turns up.
+
 ### Refusing well
 
 A refusal is only as good as what the operator can do next, and this one hands them a security
@@ -267,7 +295,7 @@ packages/environment-provisioning/
 │  ├─ service-environment.ts    → The component: one adopted project, its IAM, its state prefix
 │  ├─ audit.ts                  → EP-06: refuse a production project with human deploy bindings
 │  ├─ workload-identity.ts      → Per-service pool and provider, repository/ref-scoped binding
-│  └─ roles.ts                  → The deploy role set, one definition consumed by both environments
+│  └─ roles.ts                  → The deploy permission set (run.services.*), and the granted roles
 └─ test/                        → Mirrors src/
 ```
 
@@ -372,15 +400,17 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 8. Bootstrap **fails with an actionable message** if the org bootstrap-state bucket does not exist,
    printing the `gcloud storage buckets create` command that fixes it. It does not create the bucket
    itself — that is the one resource this module deliberately does not manage.
-9. The WIF pool and provider live in the service's own production project; no pool is shared
+9. EP-06 flags a production project granting a human `roles/editor` — proving the check matches
+   permissions, not role names. A name-based check would pass this case while humans could deploy.
+10. The WIF pool and provider live in the service's own production project; no pool is shared
    between services, and re-bootstrapping over a soft-deleted pool fails with an actionable message
    rather than `ALREADY_EXISTS`.
-10. **Adopting a production project that already grants a human a deploy-capable role fails**, names
-   every offending binding, and changes nothing (EP-06).
-11. No GCP project is created or deleted by any code path in this module.
-12. Bootstrap **succeeds with `--staging-project` alone**, and reports the service as incomplete,
+11. **Adopting a production project that already grants a human a deploy-capable role fails**, names
+    every offending binding, and changes nothing (EP-06).
+12. No GCP project is created or deleted by any code path in this module.
+13. Bootstrap **succeeds with `--staging-project` alone**, and reports the service as incomplete,
     naming the controls not yet in force (EP-07).
-13. Adding `--production-project` later provisions production and leaves staging's IAM bindings and
+14. Adding `--production-project` later provisions production and leaves staging's IAM bindings and
     state bucket unchanged — verified by comparing before and after, not by inspection.
 
 ## Open Questions
@@ -399,12 +429,9 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 5. ~~Does production allow *any* human break-glass path?~~ **Out of scope.** EP-01 stands as
    written: no human principal holds a deploy role in production. Should an incident later require
    one, it is a deliberate amendment to EP-01 with its own review — not a door this spec leaves ajar.
-6. **What counts as a "deploy-capable role"?** EP-06 cannot be implemented without the answer, and
-   a too-narrow definition lets the check pass while a human still holds effective deploy access.
-   `roles/owner` and `roles/editor` are obvious; `roles/run.admin` and `roles/iam.serviceAccountUser`
-   are the ones that actually matter for Cloud Run. Custom roles are the hard part — deciding by
-   role name is unreliable, so the check may need to expand each binding to its permission set and
-   look for the deploy verbs. `roles.ts` is where the answer lives.
+6. ~~What counts as a "deploy-capable role"?~~ **Resolved: the Cloud Run deploy permissions that
+   `roles/run.admin` confers, matched by permission and not by role name.** See
+   [What "deploy-capable" means](#what-deploy-capable-means).
 7. **What does this module do about the existing prerequisite gap?** `service-stacks` needs
    `SecureServiceAccount` and `SecureArtifactRepository`, which have no spec. They are not this
    module's job, but nothing downstream ships without them.
