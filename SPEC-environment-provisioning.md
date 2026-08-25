@@ -56,6 +56,15 @@ replaceability is what makes the boundary real rather than decorative.
 
 ## Adoption, not creation
 
+**Which projects.** `<service>-staging` and `<service>-production`, derived from the service name by
+the same rule [`service-stacks`](SPEC-service-stacks.md#project-ids-are-derived-not-passed) uses to
+write stack config. That convention is what removes the seam between the two modules: neither has to
+tell the other an identifier, because both compute it.
+
+`--staging-project` and `--production-project` therefore become overrides rather than the primary
+input — present for projects that predate the convention, absent in the ordinary case.
+
+
 The projects pre-exist. `runway bootstrap` is handed their ids and provisions the environments
 *into* them. This was chosen deliberately: creating projects needs org and billing rights that most
 organisations will not grant a CLI, and it puts the tool in the business of managing the resource

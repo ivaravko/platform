@@ -16,10 +16,28 @@ export class UsageError extends Error {}
  * somewhere unexpected is rejected outright rather than sanitised — a scaffolder
  * that silently rewrites a path the user typed is worse than one that refuses.
  */
-export const SERVICE_NAME = /^[a-z0-9][a-z0-9-]*$/;
+export const SERVICE_NAME = /^[a-z][a-z0-9-]*$/;
 
-/** npm's package-name limit. */
-const MAX_NAME_LENGTH = 214;
+/**
+ * The name becomes a GCP project id, and that is the binding constraint.
+ *
+ * `environment-provisioning` adopts `<name>-staging` and `<name>-production`;
+ * a project id caps at 30 characters, and `-production` costs 11 of them. The
+ * leading-letter rule in `SERVICE_NAME` is the same constraint: a project id
+ * may not start with a digit, so `2fa` would yield the invalid `2fa-staging`.
+ *
+ * Both are checked when the name is typed rather than surfacing later as a GCP
+ * API error partway through `runway bootstrap`.
+ */
+const MAX_NAME_LENGTH = 30 - "-production".length;
+
+/** Reads `--flag value`. Returns undefined when absent or when the value is missing. */
+const flagValue = (args: string[], flag: string): string | undefined => {
+  const index = args.indexOf(flag);
+  if (index === -1) return undefined;
+  const value = args[index + 1];
+  return value?.startsWith("--") ? undefined : value;
+};
 
 /**
  * Scaffold a new service repository into `<cwd>/<name>`.
@@ -28,16 +46,34 @@ const MAX_NAME_LENGTH = 214;
  * filesystem exactly as it found it.
  */
 export const runNew = (args: string[], cwd: string): void => {
-  const name = args[0];
+  const [name, ...rest] = args;
+  const region = flagValue(rest, "--region");
 
   if (name === undefined || name === "") {
     throw new UsageError("runway new: a service <name> is required.");
   }
 
-  if (!SERVICE_NAME.test(name) || name.length > MAX_NAME_LENGTH) {
+  if (name.length > MAX_NAME_LENGTH) {
+    throw new UsageError(
+      `runway new: service name ${JSON.stringify(name)} is ${name.length} characters; ` +
+        `the maximum is ${MAX_NAME_LENGTH}. It becomes the GCP project id ` +
+        `"${name}-production", and a project id cannot exceed 30 characters.`,
+    );
+  }
+
+  if (!SERVICE_NAME.test(name)) {
     throw new UsageError(
       `runway new: invalid service name ${JSON.stringify(name)}. ` +
-        "Use lowercase letters, digits and dashes, starting with a letter or digit.",
+        "Use lowercase letters, digits and dashes, starting with a letter — " +
+        "it becomes a GCP project id, which may not start with a digit.",
+    );
+  }
+
+  if (region === undefined || region === "") {
+    throw new UsageError(
+      "runway new: --region is required, e.g. --region europe-west1. " +
+        "It is the one value the scaffold cannot derive: project ids come from " +
+        "the service name, the region does not.",
     );
   }
 
@@ -54,7 +90,7 @@ export const runNew = (args: string[], cwd: string): void => {
   // generated README says so.
   process.env.PROJEN_DISABLE_POST = "true";
 
-  const project = new RunwayServiceProject({ name, outdir });
+  const project = new RunwayServiceProject({ name, outdir, region });
   project.synth();
 
   process.stdout.write(

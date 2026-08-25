@@ -12,10 +12,15 @@ import { UsageError, runNew } from "./commands/new";
 const HELP = `runway — scaffold a GCP service repository
 
 Usage:
-  runway new <name>    Create ./<name> as a new service repository
+  runway new <name> --region <region>
+                       Create ./<name> as a new service repository
   runway --help        Show this message
 
 Arguments:
+  --region             GCP region for both environments, e.g. europe-west1.
+                       Required: project ids derive from <name>, the region
+                       does not.
+
   <name>               Lowercase letters, digits and dashes. Becomes both the
                        package name and the directory name.
 `;

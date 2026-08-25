@@ -34,7 +34,7 @@ let readme: string;
 beforeAll(() => {
   outdir = mkdtempSync(join(tmpdir(), "runway-contract-"));
   process.env.PROJEN_DISABLE_POST = "true";
-  new RunwayServiceProject({ name: "demo", outdir }).synth();
+  new RunwayServiceProject({ name: "demo", outdir, region: "europe-west1" }).synth();
 
   workflowSource = readFileSync(
     join(outdir, ".github/workflows/build.yml"),
@@ -100,7 +100,7 @@ describe("workflow contract: stale output fails the build", () => {
       };
 
       try {
-        new RunwayServiceProject({ name: "demo", outdir: dir }).synth();
+        new RunwayServiceProject({ name: "demo", outdir: dir, region: "europe-west1" }).synth();
         execFileSync("npm", ["install"], { cwd: dir, stdio: "pipe" });
 
         // Detection lives in the workflow, not in the build task: the job runs

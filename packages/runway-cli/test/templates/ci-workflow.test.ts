@@ -37,7 +37,7 @@ const describeStep = (step: Step): string => step.uses ?? step.run ?? "";
 beforeAll(() => {
   outdir = mkdtempSync(join(tmpdir(), "runway-ci-"));
   process.env.PROJEN_DISABLE_POST = "true";
-  new RunwayServiceProject({ name: "demo", outdir }).synth();
+  new RunwayServiceProject({ name: "demo", outdir, region: "europe-west1" }).synth();
   workflow = parse(
     readFileSync(join(outdir, ".github/workflows/build.yml"), "utf-8"),
   ) as Workflow;

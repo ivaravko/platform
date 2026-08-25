@@ -59,14 +59,14 @@ describe("runway --help", () => {
 
 describe("runway new", () => {
   it("scaffolds into ./<name>", () => {
-    const { status } = run("new", "demo");
+    const { status } = run("new", "demo", "--region", "europe-west1");
 
     expect(status).toBe(0);
     expect(readdirSync(join(cwd, "demo"))).toContain(".projenrc.ts");
   });
 
   it("produces a repo that builds, through the binary end to end", () => {
-    expect(run("new", "demo").status).toBe(0);
+    expect(run("new", "demo", "--region", "europe-west1").status).toBe(0);
 
     const dir = join(cwd, "demo");
     for (const [cmd, args] of [
@@ -85,7 +85,7 @@ describe("guardrails", () => {
     execFileSync("mkdir", ["-p", target]);
     writeFileSync(existing, "precious\n");
 
-    const { status, stderr } = run("new", "demo");
+    const { status, stderr } = run("new", "demo", "--region", "europe-west1");
 
     expect(status).not.toBe(0);
     expect(stderr).toMatch(/not empty/i);
@@ -96,7 +96,7 @@ describe("guardrails", () => {
   it.each(["../escape", "../../escape", "/absolute", "nested/path"])(
     "rejects %s before writing anything",
     (name) => {
-      const { status, stderr } = run("new", name);
+      const { status, stderr } = run("new", name, "--region", "europe-west1");
 
       expect(status).not.toBe(0);
       expect(stderr).toMatch(/invalid/i);
@@ -108,7 +108,7 @@ describe("guardrails", () => {
   it.each(["", ".", "..", "-leading-dash", "UPPER", "has space"])(
     "rejects the invalid name %j",
     (name) => {
-      const { status } = run("new", name);
+      const { status } = run("new", name, "--region", "europe-west1");
       expect(status).not.toBe(0);
       expect(readdirSync(cwd)).toEqual([]);
     },

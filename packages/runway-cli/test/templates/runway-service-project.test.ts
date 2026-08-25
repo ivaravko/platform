@@ -47,7 +47,7 @@ beforeAll(() => {
   // postSynthesize would run a real `npm install` per synth; the build-out test
   // below does that deliberately, but the fast assertions must not.
   process.env.PROJEN_DISABLE_POST = "true";
-  new RunwayServiceProject({ name: "demo", outdir }).synth();
+  new RunwayServiceProject({ name: "demo", outdir, region: "europe-west1" }).synth();
   tree = treeOf(outdir);
 });
 
@@ -64,6 +64,7 @@ describe("scaffold file tree", () => {
       ".github/workflows/build.yml",
       ".gitignore",
       ".npmignore",
+      ".npmrc",
       ".oxlintrc.json",
       ".projen/deps.json",
       ".projen/files.json",
@@ -72,6 +73,8 @@ describe("scaffold file tree", () => {
       "README.md",
       // The load-bearing artifact: a worked example composing all three
       // components, with no raw gcp.* resource anywhere in it.
+      "infra/Pulumi.production.yaml",
+      "infra/Pulumi.staging.yaml",
       "infra/Pulumi.yaml",
       "infra/index.ts",
       "infra/tsconfig.json",
@@ -82,10 +85,6 @@ describe("scaffold file tree", () => {
       "test/tsconfig.json",
       "tsconfig.json",
     ]);
-  });
-
-  it("emits no .npmrc — legacy-peer-deps is a platform cost, not the user's", () => {
-    expect(tree).not.toContain(".npmrc");
   });
 
   it("carries no TODO or FIXME markers", () => {
@@ -115,7 +114,7 @@ describe("outdir default", () => {
     const previous = process.cwd();
     try {
       process.chdir(dir);
-      new RunwayServiceProject({ name: "defaulted" }).synth();
+      new RunwayServiceProject({ name: "defaulted", region: "europe-west1" }).synth();
       expect(readdirSync(join(dir, "defaulted"))).toContain(".projenrc.ts");
     } finally {
       process.chdir(previous);
@@ -207,7 +206,7 @@ describe("build-out", () => {
     () => {
       const dir = mkdtempSync(join(tmpdir(), "runway-buildout-"));
       try {
-        new RunwayServiceProject({ name: "demo", outdir: dir }).synth();
+        new RunwayServiceProject({ name: "demo", outdir: dir, region: "europe-west1" }).synth();
         // Install precedes projen: .projenrc.ts imports projen and cannot run
         // before node_modules exists.
         for (const [cmd, args] of [
@@ -231,8 +230,56 @@ describe("build-out", () => {
   );
 });
 
+describe("stack configuration", () => {
+  const stackConfig = (env: string): string => read(`infra/Pulumi.${env}.yaml`);
+
+  it.each([
+    ["staging", "demo-staging"],
+    ["production", "demo-production"],
+  ])("%s targets the derived project %s", (env, projectId) => {
+    // Derived, not passed: the scaffold knows the name, so neither a flag nor a
+    // config file has to carry an identifier between two commands.
+    expect(stackConfig(env)).toContain(`gcp:project: ${projectId}`);
+  });
+
+  it.each(["staging", "production"])("%s carries the region", (env) => {
+    // The program requires gcp:region. Without it here, every generated repo
+    // would fail its first preview on config the scaffold could have written.
+    expect(stackConfig(env)).toContain("gcp:region: europe-west1");
+  });
+
+  it("gives staging a tag to start from", () => {
+    // Staging is where a tag is fine: it is rebuilt constantly and nothing
+    // downstream inherits what it ran.
+    expect(stackConfig("staging")).toContain("imageTag:");
+  });
+
+  it("gives production no image at all until something is promoted", () => {
+    // There is no digest at scaffold time -- the image does not exist yet. A
+    // tag here would be worse than nothing: it would satisfy the config and
+    // leave production tracking something mutable, which is the failure digest
+    // promotion exists to prevent. CI writes imageDigest at promotion.
+    expect(stackConfig("production")).not.toContain("imageTag");
+    expect(stackConfig("production")).not.toContain("imageDigest");
+  });
+
+  it("gives the two environments different projects", () => {
+    expect(stackConfig("staging")).not.toEqual(stackConfig("production"));
+  });
+});
+
 describe("infra program", () => {
   const infra = (): string => read("infra/index.ts");
+
+  it("requires the region rather than defaulting it", () => {
+    // SPEC-runway-cli forbids baking a region default into generated source,
+    // and the default is the worse failure: an unset region deploys silently to
+    // Belgium instead of stopping. require() turns a wrong answer into a
+    // missing one. gcp:project is already required, so this costs no working
+    // configuration -- a fresh scaffold could never preview without config.
+    expect(infra()).toContain('gcpConfig.require("region")');
+    expect(infra()).not.toMatch(/europe-west\d/);
+  });
 
   it("composes all three components", () => {
     for (const component of [
@@ -269,6 +316,23 @@ describe("infra program", () => {
     expect(infra()).not.toMatch(/serviceAccountEmail/);
   });
 
+  it("suffixes the service account id past GCP's six-character minimum", () => {
+    // Found by a real preview, not by reading: "demo" is 4 characters and the
+    // provider rejects it. The suffix keeps every valid service name -- 1 to 19
+    // characters -- inside the 6-30 the API allows.
+    expect(infra()).toContain('accountId: "demo-runtime"');
+  });
+
+  it("prefers a digest over a tag, without branching on stack name", () => {
+    // SS-01: the program is identical for both stacks. Preferring a digest when
+    // one is configured is a branch on config, not on environment -- production
+    // gets a digest because CI sets one, not because the program knows it is
+    // production.
+    const source = infra();
+    expect(source).toContain("imageDigest");
+    expect(source).not.toMatch(/stack\s*===|getStack\(\)/);
+  });
+
   it("warns that immutable tags mean releasing a new tag, not moving one", () => {
     // AR-01 makes `latest` work exactly once. Someone will reach for it.
     expect(infra()).toMatch(/immutable/i);
@@ -299,18 +363,19 @@ describe("infra program", () => {
 });
 
 describe("scaffold toolchain", () => {
-  it("pins TypeScript 5, not the platform's 7", () => {
-    // On 7 the @pulumi/* peer range forces legacy-peer-deps on every generated
-    // repo, plus a precompile step and an isolated policy-pack install. The
-    // platform absorbs its own decisions; a service team should not.
+  it("pins TypeScript 7, matching the platform", () => {
     const pkg = JSON.parse(read("package.json")) as {
       devDependencies: Record<string, string>;
     };
-    expect(Number.parseInt(pkg.devDependencies.typescript, 10)).toBeLessThan(7);
+    expect(pkg.devDependencies.typescript).toBe("7.0.2");
   });
 
-  it("still emits no .npmrc, because on TypeScript 5 it needs none", () => {
-    expect(tree).not.toContain(".npmrc");
+  it("ships .npmrc, because @pulumi/* peer-caps TypeScript below 7", () => {
+    // The cost of matching the platform's compiler: npm refuses to resolve
+    // @pulumi/pulumi against TypeScript 7 without this, so a generated repo
+    // cannot install at all. Peer checking is disabled repo-wide as a result.
+    expect(tree).toContain(".npmrc");
+    expect(read(".npmrc")).toContain("legacy-peer-deps=true");
   });
 
   it("depends on the components package", () => {

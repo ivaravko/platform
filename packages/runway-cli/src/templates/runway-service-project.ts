@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { JsonFile, SampleFile, javascript, typescript } from "projen";
+import { JsonFile, SampleFile, TextFile, javascript, typescript } from "projen";
 
 /**
  * Everything the generated repo needs in order to run its own first command.
@@ -19,20 +19,24 @@ import { JsonFile, SampleFile, javascript, typescript } from "projen";
  */
 const NODE_VERSION = "22.18.0";
 /**
- * **Scaffolded repos use TypeScript 5, not the platform's 7 — deliberately.**
+ * **Scaffolded repos use TypeScript 7, matching the platform.**
  *
- * The platform pins 7 and pays for it: ts-node cannot load, ESLint is
- * unusable, and `@pulumi/*` peer-caps TypeScript at `<7` so every install needs
- * `legacy-peer-deps`. A scaffolded repo composes those same components, so
- * pinning 7 here would transfer all of that to a service team that never made
- * the choice — an `.npmrc` disabling peer checks repo-wide, a precompile step
- * for the Pulumi program, and an isolated install before the policy pack can
- * run. On 5 none of that exists.
+ * This reverses an earlier decision to pin 5 here. The argument for 5 was that
+ * a service team should not inherit choices the platform made for itself; the
+ * argument for 7 is that one compiler across platform and scaffold is one set
+ * of behaviours to understand, and a generated repo that compiles differently
+ * from the components it consumes is its own kind of surprise.
  *
- * The cost is that platform and scaffold diverge on compiler version. That is
- * the right side to spend it on: the platform absorbs its own decisions.
+ * It is not free. `@pulumi/*` peer-caps TypeScript at `<7`, so a generated repo
+ * cannot `npm install` without the `.npmrc` below, which disables peer checking
+ * repo-wide — in a repository the platform does not own. That is the price of
+ * the match, and it is paid in the user's repo rather than ours.
+ *
+ * Two costs the earlier comment listed have since been paid anyway: `infra/` is
+ * already precompiled with `typescript: false` (Pulumi cannot run TypeScript 7
+ * through ts-node), and the projenrc already runs on Node's own type stripping.
  */
-const TYPESCRIPT_VERSION = "5.9.3";
+const TYPESCRIPT_VERSION = "7.0.2";
 
 /** Pinned exactly, matching the platform's own `@pulumi/*` pins. */
 const PULUMI = "@pulumi/pulumi@3.259.0";
@@ -47,6 +51,15 @@ export interface RunwayServiceProjectOptions {
 
   /** Directory to generate into. @default - a directory named after the service */
   readonly outdir?: string;
+
+  /**
+   * GCP region for both environments, e.g. "europe-west1".
+   *
+   * Required, because it is the one value the scaffold cannot derive. The
+   * project ids come from the service name; the region does not, and a stack
+   * config missing it produces a repository that cannot preview.
+   */
+  readonly region: string;
 
   /**
    * How the generated repo resolves `@runway/cli` to regenerate itself.
@@ -124,10 +137,41 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
       readme: { contents: renderReadme(options.name) },
     });
 
+    this.addStackConfig(options.region);
     this.testTask.exec("vitest run", { receiveArgs: true });
     this.addLintTasks();
     this.addOxlintConfig();
+    this.addNpmrc();
     this.addSampleCode(runwayCli);
+  }
+
+  /**
+   * One stack config per environment, differing only in the project they target.
+   *
+   * Project ids are derived from the service name — `<name>-staging` and
+   * `<name>-production` — which is the same rule `environment-provisioning`
+   * adopts under. Neither module tells the other an identifier; both compute it.
+   *
+   * These are the values `infra/index.ts` requires. Writing them here is what
+   * makes a generated repo previewable without a configuration step nobody
+   * documented.
+   */
+  private addStackConfig(region: string): void {
+    for (const environment of ["staging", "production"] as const) {
+      new SampleFile(this, `infra/Pulumi.${environment}.yaml`, {
+        contents: [
+          "config:",
+          `  gcp:project: ${this.name}-${environment}`,
+          `  gcp:region: ${region}`,
+          // Staging starts from a tag. Production deliberately carries no
+          // image: there is nothing to promote yet, and a tag here would leave
+          // production tracking something mutable. CI writes imageDigest at
+          // promotion time.
+          ...(environment === "staging" ? ["  imageTag: v1"] : []),
+          "",
+        ].join("\n"),
+      });
+    }
   }
 
   /** projen has no oxlint component, so the tasks are registered by hand. */
@@ -141,6 +185,32 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
       exec: "oxlint --type-aware --fix",
     });
     this.testTask.spawn(lint);
+  }
+
+  /**
+   * Without this a generated repo cannot install at all.
+   *
+   * Generated rather than hand-written, but unlike every other generated file
+   * it carries its own explanation: someone hitting ERESOLVE reads .npmrc, not
+   * the project type that produced it.
+   */
+  private addNpmrc(): void {
+    new TextFile(this, ".npmrc", {
+      lines: [
+        "# ~~ Generated by projen. To modify, edit .projenrc.ts and run \"npx projen\".",
+        "#",
+        "# @pulumi/pulumi declares peerDependencies typescript \">= 3.8.3 < 7\", and this",
+        "# repo is on TypeScript 7. A plain `npm install` therefore fails ERESOLVE.",
+        "# Both of its peers (typescript, ts-node) are marked optional, so nothing",
+        "# needs them at runtime -- the range is stale metadata, not a real constraint.",
+        "#",
+        "# The cost is real: this disables peer checking for the WHOLE repo, so a",
+        "# genuinely incompatible peer elsewhere will now install silently. The",
+        "# @pulumi/* versions are pinned exactly to compensate.",
+        "legacy-peer-deps=true",
+        "",
+      ],
+    });
   }
 
   private addOxlintConfig(): void {
@@ -220,7 +290,15 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
         "runtime:",
         "  name: nodejs",
         "  options:",
-        "    # Pulumi runs the compiled output; see infra/tsconfig.json.",
+        "    # This does NOT disable TypeScript. index.ts is the stack program and",
+        "    # stays TypeScript; the flag only tells Pulumi not to transpile it",
+        "    # itself. `npm run build` compiles infra/ with tsc and Pulumi runs the",
+        "    # output named by `main` below.",
+        "    #",
+        "    # Required, not preferred: Pulumi transpiles via ts-node, which cannot",
+        "    # load TypeScript 7 at all, and which type-checks the whole @pulumi/gcp",
+        "    # declaration graph on every invocation -- measured at over two minutes",
+        "    # without finishing. Compiled, the same preview takes seconds.",
         "    typescript: false",
         "main: lib/index.js",
         "",
@@ -373,12 +451,25 @@ const renderInfra = (name: string): string =>
     "// resource should be able to grep for it and find nothing.",
     'const gcpConfig = new pulumi.Config("gcp");',
     'const project = gcpConfig.require("project");',
-    'const location = gcpConfig.get("region") ?? "europe-west1";',
+    "// Required, not defaulted. An unset region would otherwise deploy this",
+    "// service somewhere nobody chose, silently; `require` makes it stop.",
+    'const location = gcpConfig.require("region");',
     "",
     "// Tags are immutable: a pushed tag can never be repointed. Release by",
     "// pushing a NEW tag rather than moving an existing one -- `latest` would",
     "// work exactly once.",
-    'const imageTag = new pulumi.Config().get("imageTag") ?? "v1";',
+    "// Promotion is an artifact moving, not a rebuild. Staging runs a tag;",
+    "// production runs the digest that tag resolved to, written by CI at",
+    "// promotion. A digest wins when both are set -- which is a branch on",
+    "// configuration, never on stack name, so both stacks run this same file.",
+    'const config = new pulumi.Config();',
+    'const imageDigest = config.get("imageDigest");',
+    'const imageTag = config.get("imageTag");',
+    "if (imageDigest === undefined && imageTag === undefined) {",
+    "  throw new Error(",
+    '    "Set imageDigest (production, promoted by CI) or imageTag (staging).",',
+    "  );",
+    "}",
     "",
     'const images = new SecureArtifactRepository("images", {',
     `  repositoryId: "${name}",`,
@@ -389,7 +480,10 @@ const renderInfra = (name: string): string =>
     "// Starts with no roles at all. Grant what this service needs, one at a",
     "// time; project-wide and administrative roles are rejected outright.",
     'const identity = new SecureServiceAccount("runtime", {',
-    `  accountId: "${name}",`,
+    // Suffixed, not bare: a GCP service account id must be 6-30 characters, and
+    // a short service name like "demo" is only 4. "-runtime" also says what the
+    // identity is for, next to the CI deployer account in the same project.
+    `  accountId: "${name}-runtime",`,
     "  project,",
     "});",
     "",
@@ -398,7 +492,10 @@ const renderInfra = (name: string): string =>
     "// secure default working rather than a misconfiguration.",
     `const service = new SecureContainerService("${name}", {`,
     "  location,",
-    "  image: pulumi.interpolate`${images.imagePrefix}/" + name + ":${imageTag}`,",
+    "  image:",
+    "    imageDigest !== undefined",
+    "      ? pulumi.interpolate`${images.imagePrefix}/" + name + "@${imageDigest}`",
+    "      : pulumi.interpolate`${images.imagePrefix}/" + name + ":${imageTag}`,",
     "  serviceAccount: identity,",
     "});",
     "",
