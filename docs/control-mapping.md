@@ -50,6 +50,26 @@ names it, and each named role is checked against the denials — the two project
 anything whose final segment ends in `admin`. There is no vetted list of permitted roles, because
 none has been vetted; claiming otherwise would grant confidence without cover.
 
+## Controls: `SecureArtifactRepository`
+
+| Control | Requirement | Source | Enforced in | Tests | Policy rule |
+|---|---|---|---|---|---|
+| AR-01 | Pushed Docker tags cannot be repointed | [Artifact Registry: managing images](https://cloud.google.com/artifact-registry/docs/docker/manage-images) | `SecureArtifactRepository` | `AR-01: …` | `ar01-docker-tags-must-be-immutable` |
+| AR-02 | Vulnerability scanning is never disabled | [Artifact Registry: artifact analysis](https://cloud.google.com/artifact-registry/docs/analysis) | `SecureArtifactRepository` | `AR-02: …` | `ar02-vulnerability-scanning-not-disabled` |
+| AR-03 | Retention is bounded, and actually deletes | [Artifact Registry: cleanup policies](https://cloud.google.com/artifact-registry/docs/repositories/cleanup-policy) | `SecureArtifactRepository` | `AR-03: …` | `ar03-cleanup-policies-must-not-be-dry-run` |
+| AR-04 | Standard repository only — no proxying an external registry | [Artifact Registry: repositories](https://cloud.google.com/artifact-registry/docs/repositories) | `SecureArtifactRepository` | `AR-04: …` | — |
+
+**AR-01 has no opt-out at all**, unlike `publicAccess`. A mutable tag means an approved reference
+stops meaning an approved image, and there is no justification that makes that acceptable — so
+there is no justified form to supply.
+
+**AR-03 is really two claims.** Policies are set *and* `cleanupPolicyDryRun` is off. Dry-run
+evaluates every policy and deletes nothing, which is worse than having no policy: the configuration
+reads as a control while retaining everything.
+
+CMEK is supported through `kmsKeyName` and not required — there is no KMS component until v2, so it
+is bring-your-own-key. See [Artifact Registry: CMEK](https://cloud.google.com/artifact-registry/docs/cmek).
+
 ## Reading the columns
 
 - **Tests** — every test whose title carries the control id. The convention is enforced by the

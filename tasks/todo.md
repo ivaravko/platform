@@ -113,24 +113,24 @@ promised a compile-time one.
 - Verified live: a raw `serviceaccount.Key` and a raw `roles/editor` grant both fail a real
   `pulumi preview`, and a compliant stack passes.
 
-### D3: `SecureArtifactRepository`
+### ✅ D3: `SecureArtifactRepository` — DONE
 The third v1 component. Independent of D2 — disjoint files, safe to run in parallel.
 
 **Acceptance criteria**
-- [ ] `format: "DOCKER"`, standard mode, `dockerConfig.immutableTags: true` — a pushed tag can
+- [x] `format: "DOCKER"`, standard mode, `dockerConfig.immutableTags: true` — a pushed tag can
       never be repointed
-- [ ] `vulnerabilityScanningConfig.enablementConfig: "INHERITED"`
-- [ ] `cleanupPolicies`: keep N most recent, delete untagged older than 30 days
-- [ ] `kmsKeyName` optional — CMEK supported, not required, no KMS component until v2
-- [ ] Arg surface **re-verified against the installed `@pulumi/gcp`**, not taken from the module
+- [x] `vulnerabilityScanningConfig.enablementConfig: "INHERITED"`
+- [x] `cleanupPolicies`: keep N most recent, delete untagged older than 30 days
+- [x] `kmsKeyName` optional — CMEK supported, not required, no KMS component until v2
+- [x] Arg surface **re-verified against the installed `@pulumi/gcp`**, not taken from the module
       spec: three of its claims about Cloud Run did not survive that check in C4/C5/C6
-- [ ] Control-mapping rows, named tests and policy rules in the same commit
+- [x] Control-mapping rows, named tests and policy rules in the same commit
 
 **Verification**
-- [ ] Assertions resolve `Output` values, never constructor arguments
-- [ ] A policy rule rejects a raw repository without `immutableTags`, with a test proving it fires
-- [ ] Mutation-tested negative tests
-- [ ] `npm test --workspace @runway/gcp-components -- -t "AR-"` passes
+- [x] Assertions resolve `Output` values, never constructor arguments
+- [x] A policy rule rejects a raw repository without `immutableTags`, with a test proving it fires
+- [x] Mutation-tested negative tests
+- [x] `npm test --workspace @runway/gcp-components -- -t "AR-"` passes
 
 **Dependencies:** D1 (ordering only)
 **Files:** `packages/gcp-components/src/artifact-registry/*`, `src/index.ts`, `src/policy/*`,
@@ -138,6 +138,27 @@ The third v1 component. Independent of D2 — disjoint files, safe to run in par
 **Scope:** M
 
 ---
+
+**Findings worth carrying forward**
+- **The arg surface held this time.** Re-verified against `@pulumi/gcp@9.35.1` as the task required:
+  `dockerConfig.immutableTags`, `vulnerabilityScanningConfig.enablementConfig` (`INHERITED` |
+  `DISABLED`), and the cleanup-policy shape all match the module spec. One correction: `mode` is
+  `STANDARD_REPOSITORY`, not "standard".
+- **`cleanupPolicyDryRun` is the interesting find, and it was not in the spec.** It evaluates every
+  cleanup policy and deletes nothing — a repository looks correctly configured and retains
+  everything. That is worse than having no policy, because the configuration reads as a control.
+  AR-03 therefore asserts two things (policies set, dry-run off) and has its own policy rule.
+- **AR-01 has no opt-out at all**, deliberately unlike `publicAccess`. A mutable tag means an
+  approved reference stops meaning an approved image; there is no justification that makes that
+  acceptable, so there is no justified form to supply.
+- The AR-01 rule checks `format === "DOCKER"` first. `dockerConfig` is meaningless on a Maven or npm
+  repository, and a rule that fires where it cannot apply is a rule that gets switched off.
+- **A mutation test failed to fail, and the mutation was wrong rather than the test.** Stripping
+  `AR-02` from one test file still passed, because the id also appears in the policy test — the
+  control genuinely was still covered. Removing it from both files failed correctly. A mutation that
+  does not actually remove the property proves nothing about the check.
+- Verified live: a raw repository with mutable tags, scanning disabled and dry-run retention fails a
+  real `pulumi preview` with all three AR violations. Ten policies now registered.
 
 ### D4: `SecureContainerService` takes a `SecureServiceAccount`
 Closes [spec OQ1](../SPEC-secure-container-service.md#open-questions) and C4's documented gap. A

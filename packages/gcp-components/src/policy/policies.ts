@@ -14,6 +14,11 @@ import {
   validateStackResourcesOfType,
 } from "@pulumi/policy/policy";
 import {
+  checkCleanupNotDryRun,
+  checkImmutableTags,
+  checkVulnerabilityScanning,
+} from "./artifact-registry-rules";
+import {
   checkGrantedRole,
   checkNoServiceAccountKey,
 } from "./service-account-rules";
@@ -89,6 +94,41 @@ export const resourcePolicies: ResourceValidationPolicy[] = [
     validateResource: validateResourceOfType(gcp.projects.IAMMember, (props, _args, report) => {
       checkGrantedRole(props, report);
     }),
+  },
+  {
+    name: "ar01-docker-tags-must-be-immutable",
+    description:
+      "A Docker repository must freeze its tags, so an approved reference keeps meaning one image.",
+    enforcementLevel: ENFORCEMENT,
+    validateResource: validateResourceOfType(
+      gcp.artifactregistry.Repository,
+      (props, _args, report) => {
+        checkImmutableTags(props, report);
+      },
+    ),
+  },
+  {
+    name: "ar02-vulnerability-scanning-not-disabled",
+    description: "A repository must not opt out of vulnerability scanning.",
+    enforcementLevel: ENFORCEMENT,
+    validateResource: validateResourceOfType(
+      gcp.artifactregistry.Repository,
+      (props, _args, report) => {
+        checkVulnerabilityScanning(props, report);
+      },
+    ),
+  },
+  {
+    name: "ar03-cleanup-policies-must-not-be-dry-run",
+    description:
+      "Cleanup policies in dry-run delete nothing while appearing to enforce retention.",
+    enforcementLevel: ENFORCEMENT,
+    validateResource: validateResourceOfType(
+      gcp.artifactregistry.Repository,
+      (props, _args, report) => {
+        checkCleanupNotDryRun(props, report);
+      },
+    ),
   },
 ];
 
