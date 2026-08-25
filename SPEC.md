@@ -2,7 +2,8 @@
 
 Initiative-level spec. Defines shared toolchain, conventions, and the capability map.
 Per-module specs: [SPEC-gcp-components.md](SPEC-gcp-components.md), [SPEC-runway-cli.md](SPEC-runway-cli.md),
-[SPEC-environment-provisioning.md](SPEC-environment-provisioning.md), [SPEC-service-stacks.md](SPEC-service-stacks.md).
+[SPEC-environment-provisioning.md](SPEC-environment-provisioning.md), [SPEC-service-stacks.md](SPEC-service-stacks.md),
+[SPEC-release-path.md](SPEC-release-path.md).
 
 ## Objective
 
@@ -29,7 +30,7 @@ security document.
 | `runway-cli`               | projen-based CLI scaffolding a minimal service repo (build, CI, infra) | `gcp-components`                  |
 | [`environment-provisioning`](SPEC-environment-provisioning.md) | Adopts existing GCP projects as a service's environments: provisions the WIF pool, state buckets, CI deployer identity, and the IAM that grants CI production deploys and denies them to humans. Staging is required; production is added when the team is ready. | —              |
 | [`service-stacks`](SPEC-service-stacks.md) | Environment-aware `infra/` in the scaffold: one program, `staging` and `production` stacks differing only in config | `gcp-components`, `environment-provisioning` |
-| `release-path`             | `runway deploy --env staging` from localhost; production only from CI over WIF, promoting the digest staging verified | `service-stacks`, `runway-cli`    |
+| [`release-path`](SPEC-release-path.md) | `pulumi up` to staging from localhost; production only from CI on a pushed tag, deploying the digest that tag resolves to | `service-stacks`, `runway-cli` |
 
 **Build order:** `gcp-components` → `runway-cli` → `environment-provisioning` → `service-stacks` → `release-path`
 
