@@ -69,6 +69,12 @@ consequences, both verified rather than assumed:
 
 `tsc` and vitest both work on TS 7 — only the tools that link against the compiler API are affected.
 
+**Scaffolded repos do not inherit this.** They pin TypeScript 5: a generated repo composes
+`@runway/gcp-components`, whose `@pulumi/*` peers cap TypeScript at `<7`, so pinning 7 there fails
+`ERESOLVE` and would force `legacy-peer-deps`, a precompile step and an isolated policy-pack install
+onto every service team. The platform absorbs its own decisions. See
+[SPEC-runway-cli.md](SPEC-runway-cli.md#scaffold-output).
+
 **A third casualty, found in C2: `@pulumi/pulumi` cannot be installed at all without help.** It
 declares `peerDependencies: { typescript: ">= 3.8.3 < 7", "ts-node": ">= 7.0.1 < 12" }`, so npm
 refuses to resolve it alongside `typescript@7.0.2` and fails `ERESOLVE`. Both peers are marked

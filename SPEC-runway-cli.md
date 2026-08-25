@@ -33,10 +33,26 @@ stays on the paved road instead of drifting off it in month two.
 │  └─ index.test.ts          → One passing test, so the suite is green from commit one
 ├─ infra/
 │  ├─ Pulumi.yaml
-│  └─ index.ts               → Composes gcp-components; no raw gcp.* resources
+│  ├─ tsconfig.json          → infra/ sits outside srcdir, so `compile` never sees it
+│  └─ index.ts               → Composes gcp-components; no raw provider resources
 ├─ Dockerfile                → Distroless, non-root, multi-stage
 └─ README.md                 → What this is, how to deploy, where the guardrails live
 ```
+
+**Scaffolded repos pin TypeScript 5, not the platform's 7.** The platform pins 7 and pays for it:
+ts-node cannot load, ESLint is unusable, and `@pulumi/*` peer-caps TypeScript at `<7` so every
+install needs `legacy-peer-deps`. A scaffolded repo composes those same components, so pinning 7
+here would transfer all of it to a service team that never made the choice — an `.npmrc` disabling
+peer checks repo-wide, a precompile step for the Pulumi program, and an isolated install before the
+policy pack could run. Measured: adding `@runway/gcp-components` to a TypeScript 7 scaffold fails
+`ERESOLVE`. On 5 none of that exists, `infra/index.ts` runs directly through ts-node, and the
+divergence in compiler version is the price — paid by the platform, which is where the decision was
+made.
+
+**`infra/` is typechecked separately, and that is not incidental.** It sits outside `srcdir`, so the
+project's `compile` never sees it. Without `infra/tsconfig.json` and the `typecheck` task the
+load-bearing artifact would be emitted and never verified — it could be broken TypeScript and the
+build would pass. Wiring it up immediately caught TS2742 on the exported stack outputs.
 
 `infra/index.ts` is the load-bearing artifact — it is the worked example of composing
 `SecureServiceAccount` + `SecureArtifactRepository` + `SecureContainerService`, and it must be

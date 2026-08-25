@@ -18,7 +18,25 @@ import { JsonFile, SampleFile, javascript, typescript } from "projen";
  * See SPEC.md for the full account.
  */
 const NODE_VERSION = "22.18.0";
-const TYPESCRIPT_VERSION = "7.0.2";
+/**
+ * **Scaffolded repos use TypeScript 5, not the platform's 7 — deliberately.**
+ *
+ * The platform pins 7 and pays for it: ts-node cannot load, ESLint is
+ * unusable, and `@pulumi/*` peer-caps TypeScript at `<7` so every install needs
+ * `legacy-peer-deps`. A scaffolded repo composes those same components, so
+ * pinning 7 here would transfer all of that to a service team that never made
+ * the choice — an `.npmrc` disabling peer checks repo-wide, a precompile step
+ * for the Pulumi program, and an isolated install before the policy pack can
+ * run. On 5 none of that exists.
+ *
+ * The cost is that platform and scaffold diverge on compiler version. That is
+ * the right side to spend it on: the platform absorbs its own decisions.
+ */
+const TYPESCRIPT_VERSION = "5.9.3";
+
+/** Pinned exactly, matching the platform's own `@pulumi/*` pins. */
+const PULUMI = "@pulumi/pulumi@3.259.0";
+const PULUMI_GCP = "@pulumi/gcp@9.35.1";
 const VITEST = "vitest@4.1.11";
 const OXLINT = "oxlint@1.80.0";
 const OXLINT_TSGOLINT = "oxlint-tsgolint@7.0.2001";
@@ -67,6 +85,10 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
       jest: false,
       eslint: false,
       devDeps: [VITEST, OXLINT, OXLINT_TSGOLINT, `@runway/cli@${runwayCli}`],
+
+      // The components the infra program composes. A `file:` link while
+      // @runway/gcp-components is unpublished; D7 swaps it for a version.
+      deps: [PULUMI, PULUMI_GCP, `@runway/gcp-components@${componentsPackage()}`],
 
       // One workflow, running the repo's own `build` task — which chains
       // compile, test and lint, so a single job gates all three.
@@ -182,6 +204,41 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
       ].join("\n"),
     });
 
+    // The load-bearing artifact: a worked example of composing all three
+    // components. Runs as TypeScript directly -- on TS 5 ts-node loads, so
+    // there is no precompile step and no `typescript: false`.
+    new SampleFile(this, "infra/Pulumi.yaml", {
+      contents: [
+        `name: ${this.name}`,
+        `description: Infrastructure for ${this.name}, composed from @runway/gcp-components.`,
+        "runtime: nodejs",
+        "",
+      ].join("\n"),
+    });
+
+    new SampleFile(this, "infra/index.ts", {
+      contents: renderInfra(this.name),
+    });
+
+    // infra/ sits outside srcdir, so `compile` never sees it. Without this the
+    // worked example -- the artifact the spec calls load-bearing and says must
+    // be deployable unmodified -- is emitted and never verified: it could be
+    // broken TypeScript and the build would pass.
+    new JsonFile(this, "infra/tsconfig.json", {
+      marker: false,
+      obj: {
+        extends: "../tsconfig.json",
+        compilerOptions: { noEmit: true, rootDir: ".", types: ["node"] },
+        include: ["**/*.ts"],
+      },
+    });
+
+    const typecheck = this.addTask("typecheck", {
+      description: "Typecheck the infra program; compile only covers src",
+      exec: "tsc --noEmit -p infra/tsconfig.json",
+    });
+    this.testTask.spawn(typecheck);
+
     new SampleFile(this, "test/index.test.ts", {
       contents: [
         `import { describe, expect, it } from "vitest";`,
@@ -220,6 +277,15 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
  * built output.
  */
 const cliPackageRoot = (): string => resolve(__dirname, "../..");
+
+/**
+ * `file:` reference to the components package.
+ *
+ * Unpublished, so a version range cannot resolve yet. Swapping this for a
+ * published version is a one-line change and is D7's job.
+ */
+const componentsPackage = (): string =>
+  `file:${resolve(cliPackageRoot(), "../gcp-components")}`;
 
 /** What this is, how to run it, and where the guardrails live. */
 const renderReadme = (name: string): string =>
@@ -267,5 +333,62 @@ const renderReadme = (name: string): string =>
     "and exposes no JavaScript compiler API, so this repo runs `.projenrc.ts`",
     "through Node's own type stripping and lints with oxlint rather than ESLint —",
     "neither ts-node nor typescript-eslint can load under it.",
+    "",
+  ].join("\n");
+
+/**
+ * The worked example. Composes all three components and declares no raw
+ * `gcp.*` resource — the scaffold must not teach the habit the product exists
+ * to prevent.
+ */
+const renderInfra = (name: string): string =>
+  [
+    'import * as pulumi from "@pulumi/pulumi";',
+    'import {',
+    "  SecureArtifactRepository,",
+    "  SecureContainerService,",
+    "  SecureServiceAccount,",
+    '} from "@runway/gcp-components";',
+    "",
+    "// Named gcpConfig rather than gcp, so nothing in this file reads as the",
+    "// provider namespace. A reader checking that the scaffold declares no raw",
+    "// resource should be able to grep for it and find nothing.",
+    'const gcpConfig = new pulumi.Config("gcp");',
+    'const project = gcpConfig.require("project");',
+    'const location = gcpConfig.get("region") ?? "europe-west1";',
+    "",
+    "// Tags are immutable: a pushed tag can never be repointed. Release by",
+    "// pushing a NEW tag rather than moving an existing one -- `latest` would",
+    "// work exactly once.",
+    'const imageTag = new pulumi.Config().get("imageTag") ?? "v1";',
+    "",
+    'const images = new SecureArtifactRepository("images", {',
+    `  repositoryId: "${name}",`,
+    "  location,",
+    "  project,",
+    "});",
+    "",
+    "// Starts with no roles at all. Grant what this service needs, one at a",
+    "// time; project-wide and administrative roles are rejected outright.",
+    'const identity = new SecureServiceAccount("runtime", {',
+    `  accountId: "${name}",`,
+    "  project,",
+    "});",
+    "",
+    "// Private by default: internal load-balancer ingress, no invoker binding,",
+    "// deletion protection on. Reaching it needs a load balancer, which is the",
+    "// secure default working rather than a misconfiguration.",
+    `const service = new SecureContainerService("${name}", {`,
+    "  location,",
+    "  image: pulumi.interpolate`${images.imagePrefix}/" + name + ":${imageTag}`,",
+    "  serviceAccount: identity,",
+    "});",
+    "",
+    "// Annotated explicitly. Without it TypeScript cannot name the inferred",
+    "// Output type portably (TS2742) when the components package resolves",
+    "// through a link -- and an exported stack output should say its type.",
+    "export const serviceName: pulumi.Output<string> = service.service.name;",
+    "export const imageRepository: pulumi.Output<string> = images.imagePrefix;",
+    "export const runtimeIdentity: pulumi.Output<string> = identity.email;",
     "",
   ].join("\n");

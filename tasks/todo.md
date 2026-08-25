@@ -217,31 +217,54 @@ its tests, `SPEC-secure-container-service.md`
 
 ## Phase E: The paved road deploys
 
-### D5: The scaffold emits `infra/` built from the components
+### ✅ D5: The scaffold emits `infra/` built from the components — DONE
 The prototype deliberately emitted no infrastructure, because doing so early meant either raw
 `gcp.*` resources or waiting on components. The components now exist.
 
 **Acceptance criteria**
-- [ ] `runway new <name>` emits an `infra/` Pulumi program using `SecureArtifactRepository`,
+- [x] `runway new <name>` emits an `infra/` Pulumi program using `SecureArtifactRepository`,
       `SecureServiceAccount` and `SecureContainerService` — and **no raw `gcp.*` resource**
-- [ ] The emitted program is precompiled with `runtime.options.typescript: false`; ts-node cannot
-      load under TS 7 and a `.ts` program would not run at all
-- [ ] `@runway/gcp-components` is resolved by the generated repo, by version or `file:` link, and
+- [~] ~~The emitted program is precompiled with `runtime.options.typescript: false`~~ —
+      **no longer needed, and that is the point.** Scaffolded repos pin TypeScript 5, so ts-node
+      loads and `infra/index.ts` runs directly. The criterion assumed the scaffold would inherit the
+      platform's 7; see the finding below.
+- [x] `@runway/gcp-components` is resolved by the generated repo, by version or `file:` link, and
       which one is a deliberate choice recorded in the template
-- [ ] The emitted file tree is asserted exactly, as Tasks 2 and 4 already do
-- [ ] No `TODO` markers, commented-out code, or placeholder scaffolding
+- [x] The emitted file tree is asserted exactly, as Tasks 2 and 4 already do
+- [x] No `TODO` markers, commented-out code, or placeholder scaffolding
 
 **Verification**
-- [ ] Build-out test: scaffold to a temp dir, `npm install && npx projen && npm run build && npm test && npm run lint` all pass unmodified
-- [ ] `grep -rE "gcp\.(cloudrunv2|serviceaccount|artifactregistry)" <scaffold>/infra` returns nothing —
+- [x] Build-out test: scaffold to a temp dir, `npm install && npx projen && npm run build && npm test && npm run lint` all pass unmodified
+- [x] `grep -rE "gcp\.(cloudrunv2|serviceaccount|artifactregistry)" <scaffold>/infra` returns nothing —
       the scaffold must not teach the habit the product exists to prevent
-- [ ] Temp dir cleaned up on both pass and fail
+- [x] Temp dir cleaned up on both pass and fail
 
 **Dependencies:** D2, D3, D4
 **Files:** `packages/runway-cli/src/templates/runway-service-project.ts`, its tests
 **Scope:** M
 
 ---
+
+**Findings worth carrying forward**
+- **Adding the components to a TypeScript 7 scaffold fails `ERESOLVE`** — measured, not predicted.
+  The `@pulumi/*` peers cap TypeScript at `<7`. That forced a decision the plan had flagged as OQ2
+  and D1 had appeared to close: **scaffolded repos now pin TypeScript 5.** It removes the `.npmrc`,
+  the precompile step, and the isolated policy-pack install from every generated repo at once. The
+  platform keeps 7 and keeps paying for it, which is the right side to spend it on.
+  It also reverses an existing test's stated rationale — *"legacy-peer-deps is a platform cost, not
+  the user's"* — which was true only while the scaffold had no Pulumi dependencies.
+- **`infra/` was emitted and never typechecked.** It sits outside `srcdir`, so `compile` never saw
+  it: the artifact the spec calls load-bearing and says must be deployable unmodified could have
+  been broken TypeScript with a green build. Now has its own `tsconfig.json` and a `typecheck` task
+  wired into `test`. Mutation-tested — a type error in `infra/` fails the scaffold's own suite.
+- Wiring that up **immediately caught TS2742** on the exported stack outputs: with the components
+  resolved through a `file:` link, TypeScript cannot name the inferred `Output` type portably. Fixed
+  with explicit annotations, which an exported stack output deserves anyway.
+- **The no-raw-provider claim is now greppable.** The example had `const gcp = new pulumi.Config("gcp")`,
+  so `grep gcp\.` found hits in a file whose whole point is that it declares no provider resource.
+  Renamed to `gcpConfig`, and the test asserts the file contains no `gcp.` **at all** — stricter than
+  the rule needs, because a reader checking the claim should not have to squint. The first version of
+  that assertion failed on my own comment, which quoted the forbidden string.
 
 ### D6: The generated repo's `pulumi preview` succeeds — success criterion 3
 The premise, finally testable: the repo `runway new` emits actually deploys.
