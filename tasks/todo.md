@@ -122,20 +122,20 @@ the spec's resolved question.
 Where the boundary actually exists. Composes E2's audit and E4's federation.
 
 **Acceptance criteria**
-- [ ] **EP-01**: the production project grants **no deploy role to any human principal** — no user,
+- [x] **EP-01**: the production project grants **no deploy role to any human principal** — no user,
       no group, no exception, no justified opt-out. Unlike `publicAccess`, there is no form of this
       that is acceptable, so there is no form to supply
-- [ ] **EP-02**: the deploy role is granted **only** to the CI federated identity, scoped to one
+- [x] **EP-02**: the deploy role is granted **only** to the CI federated identity, scoped to one
       repository and ref
-- [ ] Construction runs E2's audit first and **refuses** if the adopted project already grants human
+- [x] Construction runs E2's audit first and **refuses** if the adopted project already grants human
       deploys — bootstrap fails rather than proceeding onto a compromised project
 
 **Verification**
-- [ ] **Failure-injected**: constructing against a policy containing a human deploy binding throws,
+- [x] **Failure-injected**: constructing against a policy containing a human deploy binding throws,
       and the same construction against a clean policy succeeds
-- [ ] The emitted IAM is enumerated and checked binding by binding, not counted — a count of one
+- [x] The emitted IAM is enumerated and checked binding by binding, not counted — a count of one
       would pass for the wrong single binding
-- [ ] `npm test -- -t "EP-0[12]"` passes offline
+- [x] `npm test -- -t "EP-0[12]"` passes offline
 
 **Dependencies:** E2, E4
 **Files:** `packages/environment-provisioning/src/service-environment.ts`, its tests,
