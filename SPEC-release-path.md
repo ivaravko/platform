@@ -67,12 +67,19 @@ The boundary is IAM, and IAM does not care which tool asks.
 The tag is the release name; the digest is what deploys.
 
 1. `v1.4.0` is pushed.
-2. CI resolves `<registry>/<service>:v1.4.0` to its digest, from Artifact Registry.
-3. That digest is set as `imageDigest` on the production stack.
-4. `pulumi up --stack production`.
+2. CI resolves **the tagged commit's image** — `<staging registry>/<service>:sha-<commit>`, pushed
+   by `build.yml` when that commit landed on `main` — to its digest.
+3. That digest is copied into the production registry, named `v1.4.0` there, and its presence is
+   verified by digest before anything deploys. Each environment pulls from its own registry, so the
+   artifact must exist in production's — promotion is literally the artifact moving.
+4. The digest is set as `imageDigest` on the production stack.
+5. `pulumi up --stack production`.
 
-Step 2 is the whole point. Production never re-resolves a tag at deploy time, because a tag can move
-between the resolution and the rollout — and `SecureArtifactRepository` making tags immutable
+Step 2 resolves the commit's image rather than a registry tag named `v1.4.0`, because no such
+registry tag exists before the release — the only way it could is a rebuild at release time, and
+promotion is an artifact moving, not a rebuild. The git tag names the commit; the commit names the
+image staging already ran. Production never re-resolves anything at deploy time, because a tag can
+move between the resolution and the rollout — and `SecureArtifactRepository` making tags immutable
 protects the registry, not a consumer who re-reads one later.
 
 | Id | Control |
@@ -81,7 +88,7 @@ protects the registry, not a consumer who re-reads one later.
 | RP-02 | Production deploys a digest, never a tag — the resolution happens once, in CI, and is recorded in the run log |
 | RP-03 | A tag that does not resolve to an image in the registry fails the release before any deploy is attempted |
 | RP-04 | Staging deploys use the developer's own credentials, so the audit log names a person |
-| RP-05 | No workflow file contains a literal credential; the only secret referenced is the one federation needs |
+| RP-05 | No workflow file contains a literal credential, and the release path references no stored secret at all — federation mints an identity token per run |
 | RP-06 | Rollback is `release.yml` dispatched on an existing tag's ref — same identity, same resolution, the dispatching actor recorded in the run log; a dispatch on a non-tag ref fails before any deploy step |
 
 **RP-03 is the one that will be skipped.** Resolving a missing tag returns an error that is easy to
@@ -163,7 +170,7 @@ release means production did not change.
 
 | Level | What it does | Gate |
 |-------|--------------|------|
-| Generation | The scaffold emits `release.yml`; its trigger is a tag, and it references exactly one secret | Blocking |
+| Generation | The scaffold emits `release.yml`; its trigger is a tag, and it references no stored secret | Blocking |
 | Static | No credential literal in any workflow; the WIF binding names repository and ref | Blocking |
 | Resolution | A tag absent from the registry fails before any deploy step runs (RP-03) | Blocking |
 | Rollback | `release.yml`'s triggers are exactly tag-push and dispatch, and its first step refuses a non-tag ref (RP-06) | Blocking |
@@ -196,7 +203,8 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 
 ## Success Criteria
 
-1. `runway new` emits `release.yml`, triggered on tags matching `v*`, referencing exactly one secret.
+1. `runway new` emits `release.yml`, triggered on tags matching `v*`, referencing no stored secret
+   — the spec anticipated one for federation; federation as implemented needs none.
 2. Pushing `v1.4.0` deploys production with the digest that tag resolves to, and the run log records
    the resolution.
 3. A tag absent from the registry fails the run before any `pulumi` step (RP-03).
@@ -221,9 +229,9 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 2. ~~Does production roll back, and how?~~ **Resolved: an explicit path.** `release.yml` gains a
    `workflow_dispatch` trigger, dispatched on the ref of the tag to return to. See
    [Rollback is the same release, dispatched](#rollback-is-the-same-release-dispatched).
-3. **What resolves the tag — `gcloud` or the Pulumi provider?** `gcloud artifacts docker images
-   describe` is direct and adds a CLI dependency to the workflow; reading it through the provider
-   keeps the toolchain narrower and is more indirection than the job needs.
+3. ~~What resolves the tag — `gcloud` or the Pulumi provider?~~ **Resolved: `gcloud`.** The runner
+   ships it, federation authenticates it without another moving part, and its failure mode — a
+   non-zero exit on a missing image — is exactly the gate RP-03 needs, before any deploy step.
 4. **Does a failed production deploy notify anyone?** A red workflow is visible to whoever looks. If
    releases are expected to be unattended, silence on failure is the wrong default — but alerting is
    not specified anywhere in this initiative yet.
