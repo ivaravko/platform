@@ -104,6 +104,14 @@ nothing pushed exits non-zero *and* yields no digest — either half alone stops
 a deploy step. The positive half, a present tag resolving, waits for the first real release: nothing
 can push an image until a generated repo's CI has federation.
 
+**The image path runs unattended** (2026-08-26, later the same day): with the publisher identity
+hosted in the *staging* project — production still absent — `first01`'s CI went fully green and
+pushed `sha-f5df7f1e…` to the staging registry itself, authenticated by federation as the deployer
+service account, no human and no stored secret in the path. Four scaffold defects surfaced by those
+runs are fixed in `@runway/cli@0.1.3`/`0.1.4`: the auth action's credential file nearly shipping in
+`repo.patch`, mutable installs churning the lockfile, and a regenerated repo silently losing its
+region.
+
 **RP-04 is observed** (2026-08-26): the `first01` staging service's audit trail names the person
 who deployed it, from their own credentials — read back from Google, not asserted. The release legs
 — a tag push federating into production, RP-01/RP-02/RP-06 at runtime, and the 403 — were skipped
