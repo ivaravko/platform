@@ -1,106 +1,112 @@
-# Implementation Plan: environment-provisioning — the identity boundary
+# Implementation Plan: v1 close-out — the digest boundary, and the proof that was skipped
 
-Active plan. Next module in the [capability map](../SPEC.md#capability-map) build order, and the
-first one whose whole purpose is to make something **impossible** rather than easy.
+Active plan. The last two capability-map modules — [service-stacks](../SPEC-service-stacks.md) and
+[release-path](../SPEC-release-path.md) — are specified, largely built, and partly verified. This
+plan is deliberately not a module build-out: it is the **gap list** between what those specs promise
+and what exists, found by auditing every success criterion against `main` at `f87f9bb`.
 
-Tasks: [tasks/todo.md](todo.md), numbered `E1`–`E9`. Preceding plans:
-[v1-completion](v1-completion-plan.md) (D1–D6 complete, D7 outstanding),
-[integration-tests](integration-tests-plan.md) (T1–T10 complete, T11–T12 outstanding),
+Tasks: [tasks/todo.md](todo.md), numbered `P1`–`P7`. Preceding plans:
+[environment-provisioning](environment-provisioning-plan.md) (E1–E9 complete; E7 partially
+descoped), [local-development](local-development-plan.md) (closed),
+[v1-completion](v1-completion-plan.md), [integration-tests](integration-tests-plan.md),
 [gcp-components](gcp-components-plan.md), [runway-cli](runway-cli-prototype-plan.md).
 Task history: [tasks/completed-v1.md](completed-v1.md).
 
 ## Overview
 
-[SPEC-environment-provisioning.md](../SPEC-environment-provisioning.md) states the module in one
-sentence: **a developer holding every credential they legitimately possess still cannot deploy to
-production.** Everything else is mechanism.
+What the audit found, stated as facts about `main`:
 
-That makes this module different from everything built so far. `gcp-components` hardens *defaults*
-and offers justified opt-outs; a determined caller can still reach the unsafe configuration by
-saying why. Here there is no opt-out, because the thing being prevented is a person with legitimate
-credentials doing something they are trusted to do everywhere else. The control is the absence of a
-grant, and absence is exactly what this codebase has repeatedly failed to test — every silent-pass
-found in C5–D6 was an assertion that could not tell "absent" from "never ran".
+- **SS-02 is a control with no enforcement and no test.** The spec's own testing strategy marks it
+  *Blocking*: "a tag reference in `Pulumi.production.yaml` fails the build." Nothing fails. The
+  generated program deliberately never branches on stack name (SS-01), so it *cannot* refuse a tag
+  on production — the enforcement has to live outside the program, and nothing outside the program
+  checks. A team that writes `imageTag: v2` into their production config gets a production service
+  tracking a mutable reference, silently, which is the exact failure the module exists to prevent.
+- **Test coverage of the SS controls is one of six.** `SS-01` appears in a test name; SS-02 through
+  SS-06 appear in none. Some are likely asserted under other names (SS-06's length rule is
+  implemented in `new.ts` with messages), but the repo's own discipline — a control without a named
+  test is not a control — is currently unmet for five ids. RP is in better shape: RP-01/02/03/05/06
+  all appear.
+- **The production half of release-path is designed, not observed.** The spec records it plainly
+  (2026-08-26): RP-04 is observed against the real `first01` staging service, and everything
+  production-side — a tag push federating into production, RP-01/RP-02/RP-06 at runtime, the
+  developer 403, the no-user-managed-keys check — **was skipped**, because no project can serve as
+  a clean production target while the sandbox grants `roles/owner` to a human. The E-series
+  resolved this **twice over, both as "no"** on 2026-08-26:
+  [its OQ1](environment-provisioning-plan.md#open-questions) closed as *refusal-only* (no clean
+  target exists), and its OQ2 closed as *preview-only* (`runway bootstrap` is not authorized to
+  write IAM anywhere, "until this decision is revisited"). So the production proofs are not blocked
+  on an open question — they are blocked on two standing decisions, and P4 is the explicit revisit
+  those decisions invited.
+- **One spec decision is still open**: whether `staging` may be public (service-stacks OQ3) — and
+  it hides a sharper question than the spec asks, because one program serves both stacks, so a
+  per-stack opt-out must key on config, not on code.
+- **Two spec notes have drifted from the code**: the `?? "v1"` fallback the Corrections section says
+  is "deliberately left" no longer exists (the program now throws, naming both keys), and whether
+  SS/RP ids belong in `docs/control-mapping.md` — whose completeness test is bidirectional — has
+  never been decided. EP rows were added when that module landed; SS/RP rows were not.
 
-Seven controls, EP-01 to EP-07. All seven of the spec's open questions are **resolved**, so this is
-decision-complete: nothing below waits on an answer.
+## Architecture decisions
 
-## What is already true
+**1. SS-02 enforcement lives in the generated repo's build, not in the program.** SS-01 forbids the
+program from knowing which stack it is, so the program cannot be the enforcement point — and the
+spec already resolved the mechanism: a generated `Pulumi.production.yaml` carries **no image at
+all**; CI writes `imageDigest` at promotion. What is missing is the check that keeps it that way: a
+generated test (it runs in the repo the team owns, where the config lives and drifts) asserting the
+production stack config contains no `imageTag` and no image reference that is not a digest. The
+platform's generation tier then asserts that check is emitted and fails when a tag is injected —
+enforcement proven by failure injection, per the house rule.
 
-| Module | State |
-|---|---|
-| `gcp-components` | Complete — three components, ten policy rules, controls mapped bidirectionally |
-| `runway-cli` | Complete — scaffolds a repo whose `pulumi preview` plans correctly (criterion 3) |
-| `integration-tests` | T1–T10 complete; **T11–T12 outstanding** and folded in here as E8 |
-| `environment-provisioning` | Specified, decision-complete, **not built** — this plan |
-| `service-stacks` | Specified, 3 open questions, blocked on this module |
-| `release-path` | **No spec yet** |
-| Publishing (D7) | Outstanding, and deliberately still last — see below |
+**2. The production proof is one gated phase, sequenced last.** Everything real-GCP was skipped for
+the same root cause — no clean production target — so it is planned as one decision (P4) followed
+by one attended verification session (P5, P6) with explicit stop conditions, not smeared across
+tasks. Offline gaps (P1–P3) land first and are unblocked today; nothing in them touches GCP.
 
-## Architecture Decisions
+**3. This plan closes v1 rather than opening new scope.** Every task traces to an existing spec's
+success criterion or open question. Anything discovered beyond that gets recorded as an open
+question for a future plan, not absorbed.
 
-**1. The permission set comes first (E1).** EP-01, EP-02 and EP-06 all turn on one question: *what
-counts as deploy-capable?* The spec resolved it as Cloud Run's deploy permissions matched by verb,
-not by role name. Every other control consumes that answer, and getting it wrong makes three
-controls wrong in the same direction — silently permissive. It is also pure logic, so it is the one
-piece that can be exhaustively tested offline.
-
-**2. Staging before production (E3 → E5).** The spec makes `--production-project` optional and
-staging the common starting point. Building staging first also means the dangerous half — the module
-that must *refuse* — lands after the safe half works, rather than being debugged alongside it.
-
-**3. The audit (E2) precedes the component that depends on it (E5).** EP-06 refuses a production
-project that already grants a deploy-capable role to a human. It never repairs. That is a read-only
-analysis over an IAM policy, testable against fixtures, and it must be right before anything writes
-IAM anywhere.
-
-**4. `ServiceEnvironment` twice, never `isProduction`.** Straight from the spec, and worth restating
-because it is the kind of thing that erodes under a deadline: two instances of a reviewed component
-beat one component with a branch, because the branch is where the boundary silently softens.
-
-**5. Publishing stays last (E9).** This module adds a *third* published package. Freezing the API
-before its own integration run has confirmed the boundary holds would be the same mistake D7 was
-scheduled after D4 to avoid.
-
-**6. This is the first module that mutates a real project.** Everything to date has been
-`preview`-only, with one authorized `up` that was torn down. `runway bootstrap` grants IAM. E7 is
-scoped and gated accordingly, and the plan does not assume that authorization is already given.
-
-## Dependency Graph
+## Dependency graph
 
 ```
-E1  The deploy permission set (roles.ts)        ◄── three controls key on this
- ├── E2  EP-06 audit: refuse, never repair
- │
- ├── E3  ServiceEnvironment — staging (EP-04, EP-05)
- │        │
- │        └── E4  Workload Identity Federation (EP-03)
- │              │
- │              └── E5  ServiceEnvironment — production (EP-01, EP-02)
- │                       │   composes E2's audit and E4's federation
- │                       └── E6  runway bootstrap (EP-07)
- │                              └── E7  Integration: prove the boundary in GCP
- │
- └────────────────────────────────────────────────┐
-                                                  ▼
-                             E8  T11–T12: the integration workflow
-                                    └── E9  D7: publishing, three packages
+P1  SS-02: the digest check          ─┐  offline, unblocked
+P2  SS/RP coverage audit  (after P1) ─┤
+P3  staging-public decision          ─┘  P3 parallel with P1→P2
+
+P4  the production-project decision  ──►  P5  promote to production, observed
+                                          │
+                                          ▼
+                                          P6  the negative proofs: 403, no keys, rollback
+
+P7  v1 truth pass  ◄── everything above
 ```
 
-E2 and E3 both depend only on E1 and touch disjoint files — the one safely parallel pair. E8 is
-independent of the whole E-chain and could run at any point; it is placed late only because it
-closes out a different plan.
+P1 and P2 both touch the scaffold's test files and are sequential. P3 touches spec and docs only —
+the one safely parallel task. P4 is a decision, not code; P5 and P6 are gated on it and on explicit
+authorization. P7 closes the map.
 
-## Risks and Mitigations
+## Checkpoints
+
+- **Checkpoint 1 — after P3.** Every SS and RP control has a named test or a recorded reason it
+  cannot have one; a tag injected into a production stack config fails a build, demonstrably; the
+  staging-public question is answered in the spec. All offline, all in the PR gate.
+- **Checkpoint 2 — after P6.** Either: production observed — a tag push deploys the resolved
+  digest, a credentialed human's `pulumi up --stack production` returns 403, zero user-managed keys
+  exist, and a dispatch on an old tag redeploys its digest — or: what remains unverified is stated
+  in SPEC-release-path.md's verification status with the reason, and nothing was weakened to
+  manufacture a pass.
+- **Checkpoint 3 — after P7.** The capability map, README, and completed history agree with
+  reality; no spec claims more than was observed; human review of the whole v1 claim.
+
+## Risks
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| **The sandbox cannot serve as a production project for E7.** `ihar@perfinium.tech` holds `roles/owner` on `enduring-badge-506610-u9`, so EP-06 must *refuse* it. That is the control working, and it means the happy path cannot be demonstrated there. | **High** — E7's central assertion has nowhere to run | [Open question 1](#open-questions). Options: a second project, or an owner-free project. Do not weaken EP-06 to make the test pass. |
-| Proving a negative — "no human can deploy" — is the assertion class this repo keeps getting wrong | **High** | Every EP control gets a **failure-injection** counterpart, as T10 did: grant the thing, prove the check fires, revoke it. An absence assertion with no injected presence is not evidence. |
-| `runway bootstrap` writes IAM to a real project | **High** — hard to reverse, and IAM mistakes are exactly the failure mode | E7 is gated on explicit authorization, applies to staging first, and records exactly what it granted so it can be revoked. |
-| WIF provider misconfiguration silently accepts a wider audience than intended (any repo, any ref) | **High** — a boundary that looks present and is not | E4 asserts the attribute condition rejects a wrong repo *and* a wrong ref, not merely that a condition string exists. |
-| Adding a third package to the workspace | Low | C1 established the pattern; the `workspaces` array is test-asserted. |
-| `service-stacks` was specified in parallel and may not match what gets built | Medium | Its 3 open questions are surfaced here rather than discovered during E6. |
+| **SS-02's check can be deleted by the team it polices.** It lives in the generated repo, which the team owns after `runway new`. | Medium — the control is advisory once the repo drifts | Accepted and stated: the scaffold's premise is defaults you must work to remove, not defaults you cannot. The platform-side generation test keeps every *new* repo honest; nothing can keep a team's fork honest without a server-side control, which is new scope. Recorded in the spec rather than implied. |
+| **P5 writes to a real production-designated project.** IAM grants, a state bucket, a deployed service. | High — the repo's sharpest boundary | Same regime as E7: gated on the P4 decision *and* explicit authorization per SPEC.md's boundaries; every grant recorded for revocation; stop-and-report over improvisation. The `first01` staging run is the template. |
+| **No project can be designated, and P5/P6 stay blocked.** The sandbox's `roles/owner` binding makes EP-06 refuse it — correctly. | High — v1's central claim stays a design | The honest fallback is explicit: record production verification as permanently descoped in both specs, close v1 with that caveat on the front page, and stop. Do not weaken EP-06; do not call designed "observed". |
+| **The parallel session.** This checkout has had another active session all day; `main` moved four times during the last feature. | Medium — merge collisions in the same template file | Small commits, rebase before push, and the active-pair rename is committed with the plan so the state is unambiguous. The collision protocol from the local-development merge worked; reuse it. |
+| **SS-02 vs SS-01 tension re-emerges in implementation** — someone "fixes" enforcement by branching the program on stack name. | Medium | The architecture decision above names the resolved mechanism; P1's acceptance criteria forbid touching the program at all. |
 
 ## Definition of Done
 
@@ -108,29 +114,24 @@ Per task, on top of its own acceptance criteria:
 
 - [ ] Acceptance criteria met by running it, not by typechecking
 - [ ] `npm run build`, `npm test`, `npm run lint` pass at the root across all packages
-- [ ] Every control has its mapping row, named test, and — where a raw resource could bypass it —
-      a policy rule, **in the same commit**
-- [ ] **Every negative assertion is failure-injected.** Grant the thing, watch the check fire, revoke
-      it. Four silent-passes were found in C5–D6 and every one was an absence that could not fail
-- [ ] No test requires GCP credentials or network beyond the npm registry, except the E7 tier, which
-      is explicitly gated
+- [ ] **Every negative assertion is failure-injected** — no absence asserted without injected
+      presence
+- [ ] No test in the PR gate requires GCP credentials or network; P5/P6 run in the gated
+      integration tier only
+- [ ] Spec verification-status sections updated in the same commit as the verification they record
 - [ ] Human review before the task is checked off
 
 ## Open Questions
 
-1. ~~Which project does E7 audit as "production"?~~ **Resolved 2026-08-26: refusal-only.** No clean
-   production target exists, so E7 proves EP-06 refusing the owner-held sandbox and previews the
-   staging path; the acceptance path — and the observed 403 that is this module's central claim —
-   is recorded plainly as **unverified**, per E7's own stop condition. EP-06 is not weakened to
-   manufacture a pass.
-2. ~~Is `runway bootstrap` authorized to write IAM, and to which projects?~~ **Resolved 2026-08-26:
-   no — preview only.** The integration tier reads IAM policies and runs `pulumi preview`; it
-   writes nothing and grants nothing. The durable-grant path stays unexercised until this decision
-   is revisited, and E7's scope narrows accordingly.
-3. **`service-stacks` carries 3 unresolved open questions** and depends on this module. Worth
-   resolving before E6 fixes the shape of `--print-config`, since that is the seam between them.
-4. **`release-path` has no spec.** It is last in the build order, so this does not block the E-series
-   — but it is the module that makes the boundary *usable*, and its absence should be deliberate.
-5. **Does `environment-provisioning` publish?** It is a third package. If the registry answer from
-   [D7](v1-completion-plan.md#open-questions) is still open, it is now open for three packages
-   rather than two.
+1. **Do the two standing "no" decisions get reversed?** The E-series closed its OQ1 as
+   *refusal-only* (no clean production target) and its OQ2 as *preview-only* (no IAM writes,
+   explicitly "until this decision is revisited"). P5 and P6 need **both** reversed: a designated
+   clean project, and write authorization scoped to it. The alternative is confirming the descope
+   as v1's final answer. **This is P4, and it is the user's decision — two decisions, not one.
+   Blocks P5 and P6, nothing earlier.**
+2. **May staging be public?** Service-stacks OQ3. The opt-out exists (`publicAccess` with a
+   justification); the open half is confirming it can be exercised per stack when one program
+   serves both — which means keying it on config. Resolved in P3.
+3. **Do SS/RP ids get rows in `docs/control-mapping.md`?** The mapping's completeness test is
+   bidirectional, so adding them is a commitment, not a formality. EP set the precedent when its
+   module landed. Decided in P2, ask-first.
