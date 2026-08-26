@@ -160,17 +160,17 @@ Where the boundary actually exists. Composes E2's audit and E4's federation.
 Wires the module to a command. Parsing and composition only.
 
 **Acceptance criteria**
-- [ ] `--staging-project` required; `--production-project` **optional**, because a service may adopt
+- [x] `--staging-project` required; `--production-project` **optional**, because a service may adopt
       staging alone and add production later
-- [ ] **EP-07**: `--print-config` reports a service with no production environment as
+- [x] **EP-07**: `--print-config` reports a service with no production environment as
       **incomplete** — visibly, not by omission, since a silent gap reads as "configured"
-- [ ] Refuses invalid project ids and repository specs before touching anything
-- [ ] `--help` lists the flags and says which are required
+- [x] Refuses invalid project ids and repository specs before touching anything
+- [x] `--help` lists the flags and says which are required
 
 **Verification**
-- [ ] End-to-end through the CLI binary, not the module directly
-- [ ] **Failure-injected**: staging-only output states production is missing; a run with both does not
-- [ ] A dry run writes nothing — asserted by checking the target project is unchanged, per resource
+- [x] End-to-end through the CLI binary, not the module directly
+- [x] **Failure-injected**: staging-only output states production is missing; a run with both does not
+- [x] A dry run writes nothing — asserted by checking the target project is unchanged, per resource
       type, rather than inferred from an empty filter
 
 **Dependencies:** E5
