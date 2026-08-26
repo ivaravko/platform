@@ -72,19 +72,19 @@ resolved open question.
 The safe half first. One adopted project, its IAM, its state prefix.
 
 **Acceptance criteria**
-- [ ] **EP-04**: staging deploy is granted to a **developers group**, never to an individual — a
+- [x] **EP-04**: staging deploy is granted to a **developers group**, never to an individual — a
       `user:` principal is rejected at construction
-- [ ] **EP-05**: the state bucket is versioned and access-controlled per environment; two
+- [x] **EP-05**: the state bucket is versioned and access-controlled per environment; two
       environments never share one
-- [ ] Adopts an existing project — it does not create one, per the spec's resolved question
-- [ ] `ServiceEnvironment` is the unit. **No `isProduction` flag**, now or later: the caller composes
+- [x] Adopts an existing project — it does not create one, per the spec's resolved question
+- [x] `ServiceEnvironment` is the unit. **No `isProduction` flag**, now or later: the caller composes
       it twice, because a branch is where the boundary silently softens
 
 **Verification**
-- [ ] Assertions resolve `Output` values, never constructor arguments
-- [ ] **Failure-injected**: passing a `user:` principal throws; passing a group does not
-- [ ] A structural test asserts the args interface carries no environment-kind flag
-- [ ] `npm test -- -t "EP-0[45]"` passes offline
+- [x] Assertions resolve `Output` values, never constructor arguments
+- [x] **Failure-injected**: passing a `user:` principal throws; passing a group does not
+- [x] A structural test asserts the args interface carries no environment-kind flag
+- [x] `npm test -- -t "EP-0[45]"` passes offline
 
 **Dependencies:** E1
 **Files:** `packages/environment-provisioning/src/service-environment.ts`, `src/index.ts`,
