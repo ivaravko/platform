@@ -78,10 +78,46 @@ protects the registry, not a consumer who re-reads one later.
 | RP-03 | A tag that does not resolve to an image in the registry fails the release before any deploy is attempted |
 | RP-04 | Staging deploys use the developer's own credentials, so the audit log names a person |
 | RP-05 | No workflow file contains a literal credential; the only secret referenced is the one federation needs |
+| RP-06 | Rollback is `release.yml` dispatched on an existing tag's ref — same identity, same resolution, the dispatching actor recorded in the run log; a dispatch on a non-tag ref fails before any deploy step |
 
 **RP-03 is the one that will be skipped.** Resolving a missing tag returns an error that is easy to
 swallow and continue past, and the failure then arrives as a Cloud Run revision that cannot pull its
 image — long after the release looked successful.
+
+## Rollback is the same release, dispatched
+
+Production rolls back through an explicit path, and the path is not a new mechanism. `release.yml`
+carries a second trigger, `workflow_dispatch`, and rolling back is dispatching it on the tag to
+return to:
+
+```bash
+gh workflow run release.yml --ref v1.3.0
+```
+
+The run is a release run in every way that matters: the same federated identity, the same
+resolution of tag to digest, the same RP-03 refusal if the tag no longer resolves. It performs its
+own resolution and records it (RP-02) — it does not trust the original release's run log, which may
+have expired. What changes is what the run log answers: a dispatch names the person who asked for
+it, so "who rolled back" is an actor, not an inference from a tag push.
+
+Dispatching **on the tag's own ref** is the load-bearing choice:
+
+- The WIF attribute condition already trusts tag refs; nothing widens to accommodate rollback. A
+  dispatch on a branch ref is refused twice — by a guard in the workflow before any deploy step,
+  and by Google when federation rejects the ref.
+- The workflow that runs is the workflow as of that tag, so an old release rolls back with the
+  deploy configuration it shipped with, not today's. (A dispatch needs `release.yml` to exist at
+  the tag; in a scaffolded repository it exists from the first commit.)
+
+The alternatives, and why not:
+
+- **Re-tagging an older commit** conflates roll back with release again. The tag list is how "what
+  shipped" is answered, and it stops being a truthful history the moment `v1.4.1` is secretly
+  `v1.3.0`.
+- **A separate `rollback.yml`** fails the same test that split `release.yml` from `build.yml`:
+  trigger, permissions, failure meaning. Only the trigger differs — the permissions are identical,
+  and a red run means the same thing, production did not change. A second file would duplicate the
+  deploy job to express one extra trigger line.
 
 ## Commands
 
@@ -91,7 +127,10 @@ gcloud auth application-default login
 cd infra && pulumi stack select staging && pulumi up
 
 # Production
-git tag v1.4.0 && git push origin v1.4.0     # the entire interface
+git tag v1.4.0 && git push origin v1.4.0     # the entire release interface
+
+# Rollback
+gh workflow run release.yml --ref v1.3.0     # re-run the release that tag was
 ```
 
 There is deliberately no local command that deploys production. Attempting it is not blocked by
@@ -123,6 +162,7 @@ release means production did not change.
 | Generation | The scaffold emits `release.yml`; its trigger is a tag, and it references exactly one secret | Blocking |
 | Static | No credential literal in any workflow; the WIF binding names repository and ref | Blocking |
 | Resolution | A tag absent from the registry fails before any deploy step runs (RP-03) | Blocking |
+| Rollback | `release.yml`'s triggers are exactly tag-push and dispatch, and its first step refuses a non-tag ref (RP-06) | Blocking |
 | Integration | A real tag push against the sandbox resolves and previews production | Before release |
 
 **The staging refusal cannot be unit-tested.** That a developer's `pulumi up --stack production`
@@ -159,6 +199,8 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 4. `gcloud iam service-accounts keys list` returns no user-managed keys in the production project.
 5. A developer running `pulumi up --stack production` receives 403 — observed, not asserted.
 6. `grep -rE "AIza|-----BEGIN|ghp_" .github/` in a generated repo returns nothing.
+7. `gh workflow run release.yml --ref v1.3.0` redeploys the digest `v1.3.0` resolves to, with the
+   dispatching actor in the run log; the same dispatch on `main` deploys nothing.
 
 ## Open Questions
 
@@ -170,9 +212,9 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
    **The ordering half of this question is resolved:** a new environment's first apply is two-phase,
    registry first, then push, then the rest. See
    [service-stacks](SPEC-service-stacks.md#the-first-deploy-of-an-environment-is-two-phases).
-2. **Does production roll back, and how?** Re-tagging an older commit would redeploy an older digest,
-   which works but conflates "roll back" with "release again". An explicit path may be worth having,
-   or may be ceremony over `pulumi stack history`.
+2. ~~Does production roll back, and how?~~ **Resolved: an explicit path.** `release.yml` gains a
+   `workflow_dispatch` trigger, dispatched on the ref of the tag to return to. See
+   [Rollback is the same release, dispatched](#rollback-is-the-same-release-dispatched).
 3. **What resolves the tag — `gcloud` or the Pulumi provider?** `gcloud artifacts docker images
    describe` is direct and adds a CLI dependency to the workflow; reading it through the provider
    keeps the toolchain narrower and is more indirection than the job needs.
