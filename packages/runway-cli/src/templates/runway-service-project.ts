@@ -242,6 +242,12 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
           contents: github.workflows.JobPermission.WRITE,
           idToken: github.workflows.JobPermission.WRITE,
         },
+        // npm ci, never npm install: a mutable install rewrites the
+        // lockfile's platform-specific optional entries (a Mac wrote it, a
+        // Linux runner regenerates it) and the mutation check fails on every
+        // run. The platform repo learned this on itself; the first federated
+        // CI run taught it to the scaffold.
+        mutableInstall: false,
       },
 
       // Registry auth BEFORE the install step -- preBuildSteps runs after it,
@@ -942,6 +948,12 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
     this.compileTask.spawn(compileInfra);
 
     this.gitignore.exclude("infra/lib/");
+
+    // google-github-actions/auth writes its credential file into the
+    // workspace. Untracked, the mutation check diffs it -- and uploads it in
+    // repo.patch, which is a credential file in a build artifact. Found by
+    // the first federated CI run, not by review.
+    this.gitignore.exclude("gha-creds-*.json");
 
     new SampleFile(this, "test/server.test.ts", {
       contents: [

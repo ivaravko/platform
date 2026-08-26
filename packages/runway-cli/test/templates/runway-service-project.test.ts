@@ -750,3 +750,12 @@ describe("container image", () => {
   });
 });
 
+
+describe("federated CI leaves no residue", () => {
+  it("gitignores the auth action's credential file", () => {
+    // Untracked, the mutation check would diff it and upload it in
+    // repo.patch — a credential file in a build artifact. Observed on the
+    // first federated run.
+    expect(read(".gitignore")).toContain("gha-creds-*.json");
+  });
+});
