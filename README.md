@@ -54,7 +54,21 @@ gcloud storage buckets update gs://<org>-runway-bootstrap-state --versioning
 # Once per service: the projects, with billing attached. Ids derive from the
 # service name — the flags below only confirm them.
 gcloud projects create <name>-staging     # and <name>-production, when it is ready
+
+# Once per deployer identity: read access to the @runway/* npm registry, which
+# the image build's `npm ci` pulls from. Found by the first production cutover:
+# the deployer authenticated fine and then 403'd on the package download.
+gcloud artifacts repositories add-iam-policy-binding runway \
+  --location europe-west1 --project <platform-project> \
+  --member serviceAccount:<name>-deployer@<name>-production.iam.gserviceaccount.com \
+  --role roles/artifactregistry.reader
 ```
+
+For a production project, one more hand-made step — and it is the point of the module: **the
+creator's `roles/owner` must come off**, replaced by admin roles that carry no `run.*` verb
+(`iam.serviceAccountAdmin`, `iam.workloadIdentityPoolAdmin`, `storage.admin`,
+`resourcemanager.projectIamAdmin`), or EP-06 refuses the adoption — correctly. Org-level access is
+the recovery path; without an organisation, do not attempt this.
 
 Bootstrap then adopts the projects and builds the identity boundary — state buckets, deploy IAM,
 and the CI federation:

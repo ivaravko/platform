@@ -113,10 +113,31 @@ runs are fixed in `@runway/cli@0.1.3`/`0.1.4`: the auth action's credential file
 region.
 
 **RP-04 is observed** (2026-08-26): the `first01` staging service's audit trail names the person
-who deployed it, from their own credentials — read back from Google, not asserted. The release legs
-— a tag push federating into production, RP-01/RP-02/RP-06 at runtime, and the 403 — were skipped
-with production by the user's decision; the sha-tagged artifact the first release will resolve is
-already in the staging registry, waiting.
+who deployed it, from their own credentials — read back from Google, not asserted.
+
+**The release legs ran later the same day, against a real production project.** The earlier skip
+was reversed by the v1 close-out's P4: `first01-production` was created under the organisation,
+the creator's `owner` replaced by a granular non-deploy admin set, and EP-06's **acceptance path
+adopted it — its first-ever acceptance**. Verdicts, each from the run log or the GCP API rather
+than from our own state:
+
+| Claim | Verdict |
+|---|---|
+| RP-01 — deploys only from CI, by federation, no key in the path | **Observed.** `v0.1.0` deployed by `first01-deployer@first01-production` via the WIF provider; no secret referenced anywhere in the run |
+| RP-02 — a digest, never a tag, resolution recorded | **Observed.** `v0.1.0 resolves to sha256:8701285…` in the run log; the artifact was checksum-verified into the production registry and deployed by that digest |
+| RP-03 — a missing image fails before any deploy step | **Observed, failure-injected.** A tag on a commit CI never built (`v0.0.0-inject`) failed at the resolve step; the registry-ensure, promote and deploy steps never ran. The injected tag was removed after |
+| RP-06 — rollback is the same release, dispatched; non-tag refused | **Observed, both halves.** A dispatch on `main` failed in 7s at `Refuse a non-tag ref` with the actionable message; a dispatch on `v0.1.0` re-resolved the same digest itself and redeployed it, dispatching actor recorded on the run |
+| The human denial (`pulumi up --stack production` → 403) | **Partially observed.** The human's read-only `gcloud run services list` on production is already denied (`run.services.list`); the full deploy-attempt denial is run by the operator and recorded when pasted back |
+| No user-managed keys (criterion 4) | **Pending the operator.** The granular admin set cannot even list keys (`iam.serviceAccountKeys.list` denied) — itself evidence of its tightness; the observed empty listing needs a self-granted `serviceAccountKeyAdmin` |
+
+**Two gaps the first production cutover surfaced, both fixed the same day.** (1) The repository
+variables are shared by `build.yml` and `release.yml`, so the cutover moves image pushes to the
+production deployer — which held nothing on the staging registry where images live.
+`ServiceEnvironment` now takes `imageProject` and grants the deployer `artifactregistry.writer`
+across the boundary; failure-injected in mocks and proven by a green dispatched build. (2) The
+same identity could not read the platform npm registry during the image build's `npm ci`; the
+hand-made repo-level `artifactregistry.reader` grant that staging's publisher already had was
+mirrored — that grant is per deployer identity, and belongs on the hand-made prerequisites list.
 
 ## Rollback is the same release, dispatched
 

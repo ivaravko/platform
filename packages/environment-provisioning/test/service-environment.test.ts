@@ -5,6 +5,7 @@ import { resolve, resourcesFor } from "./setup";
 import {
   ServiceEnvironment,
   attributeConditionAdmits,
+  isDeployCapable,
   type IamPolicy,
 } from "../src";
 
@@ -332,6 +333,66 @@ const published = (name: string): ServiceEnvironment =>
       deployableBy: { humans: { group: "developers@acme.com" } },
       ciImagePublisher: { repository: "acme/checkout" },
     });
+
+describe("production imageProject — one identity, both jobs", () => {
+  // Found by the first real bootstrap run: the images live in staging's
+  // registry, so once the repository variables move to the production
+  // identity, the image push 403s unless the writer grant crosses the
+  // project boundary with it.
+  const withImageProject = (name: string): ServiceEnvironment =>
+    new ServiceEnvironment(name, {
+      service: "checkout",
+      environment: "production",
+      location: "europe-west1",
+      deployableBy: {
+        ci: {
+          repository: "acme/checkout",
+          refs: ["refs/heads/main", "refs/tags/v*"],
+          existingPolicy: cleanAdoptedPolicy,
+          imageProject: "checkout-staging",
+        },
+      },
+    });
+
+  it("grants the deployer registry writer on the image project, exactly", async () => {
+    const env = withImageProject("imgproj");
+    await resolve(env.project);
+    const created = await resourcesFor("imgproj");
+
+    const crossProject = created
+      .filter((r) => r.type === PROJECT_IAM_TYPE)
+      .filter((r) => r.props.project === "checkout-staging")
+      .map((r) => ({ role: r.props.role, member: r.props.member }));
+    expect(crossProject).toEqual([
+      {
+        role: "roles/artifactregistry.writer",
+        member:
+          "serviceAccount:checkout-deployer@checkout-production.iam.gserviceaccount.com",
+      },
+    ]);
+  });
+
+  it("grants nothing across the boundary when no image project is named", async () => {
+    // The failure-injected half: the enumerated EP-02 grant set is already
+    // exact for this construction, so a cross-project member appearing there
+    // would fail it — asserted here directly all the same, because absence
+    // proven in one test should not depend on exactness maintained in another.
+    const env = production("imgproj-none");
+    await resolve(env.project);
+    const created = await resourcesFor("imgproj-none");
+
+    const crossProject = created
+      .filter((r) => r.type === PROJECT_IAM_TYPE)
+      .filter((r) => r.props.project !== "checkout-production");
+    expect(crossProject).toEqual([]);
+  });
+
+  it("writer is not deploy-capable — the grant does not soften EP-01", () => {
+    // The permission set is the authority: if artifactregistry.writer ever
+    // gained a run.services verb, this fires before any policy review would.
+    expect(isDeployCapable({ role: "roles/artifactregistry.writer" })).toBe(false);
+  });
+});
 
 describe("staging CI image publisher — federation without a deploy role", () => {
   it("federates in the staging project, scoped to main, and grants writer only", async () => {

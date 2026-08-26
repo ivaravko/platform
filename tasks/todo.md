@@ -128,18 +128,21 @@ explicitly "until this decision is revisited"). This task is that revisit. P5 an
 reversed; either one standing keeps them descoped.
 
 **Acceptance criteria**
-- [ ] **The user decides, twice**: a clean production project is designated (named, with who
-      created it and what they hold) **and** IAM-write authorization is granted, scoped to that
-      project — or the descope is confirmed as v1's final answer
-- [ ] The outcome lands in [environment-provisioning-plan.md OQ1/OQ2](environment-provisioning-plan.md#open-questions)
-      and SPEC-release-path.md's verification status, cross-linked
-- [ ] If the descope stands: P5 and P6 close as descoped with their unverified claims enumerated
-      on the spec's front section, and Checkpoint 2 takes its fallback branch
+- [x] **The user decides, twice**: both reversed, 2026-08-26. `first01-production` created under
+      `ihar-org` (by ihar@, whose creator `owner` was replaced with `serviceAccountAdmin` +
+      `workloadIdentityPoolAdmin` + `storage.admin` + `projectIamAdmin` — no `run.*` verb among
+      them, org-level `organizationAdmin` as the recovery path). IAM writes authorized, scoped to
+      the two first01 projects
+- [x] The outcome lands in [environment-provisioning-plan.md OQ1/OQ2](environment-provisioning-plan.md#open-questions)
+      and SPEC-release-path.md's verification status, cross-linked — plan updated with both
+      reversals; the spec side lands with P5/P6's verdicts
+- [~] ~~If the descope stands~~ — not applicable, both decisions reversed
 
 **Verification**
-- [ ] If designated: `runway bootstrap`'s EP-06 audit *accepts* the project — the acceptance path
-      exercised for the first time — and `gcloud projects get-iam-policy` confirms no human deploy
-      binding independently of our own code
+- [x] If designated: `runway bootstrap`'s EP-06 audit *accepts* the project — **it did, the
+      acceptance path's first-ever run** (12 created, no refusal) — and
+      `gcloud projects get-iam-policy` confirmed independently: the only `run.*` binding is
+      Google's own serverless service agent, no human deploy-capable role
 
 **Dependencies:** None to decide; blocks P5, P6
 **Files:** `tasks/environment-provisioning-plan.md`, `SPEC-release-path.md`
@@ -152,23 +155,29 @@ The verifications SPEC-release-path.md records as skipped, run for real: bootstr
 push a tag, watch CI resolve and deploy the digest.
 
 **Acceptance criteria**
-- [ ] `runway bootstrap` provisions the production environment: WIF, state bucket, CI deployer,
-      the IAM the boundary requires — every grant recorded for revocation
-- [ ] A pushed `v*` tag deploys production with the digest that tag resolves to; the resolution is
-      in the run log (RP-02 at runtime); the service responds on its private ingress
-- [ ] A tag absent from the registry fails the run before any `pulumi` step (RP-03 at runtime)
-- [ ] Results recorded in SPEC-release-path.md's verification status, replacing "skipped" entries
-      with observed verdicts — including anything that still failed
+- [x] `runway bootstrap` provisions the production environment: WIF, state bucket, CI deployer,
+      the IAM the boundary requires — 12 resources in 31s, plus the cross-project image-writer
+      grant that run surfaced as missing (fixed, mock-tested, applied as one further create)
+- [x] A pushed `v*` tag deploys production with the digest that tag resolves to —
+      `v0.1.0 → sha256:8701285…`, in the run log, checksum-verified into the production registry.
+      ~~responds on its private ingress~~ deployment read from the run's own API describe; the
+      human cannot probe the service at all (`run.services.list` denied — recorded as evidence)
+- [x] A tag absent from the registry fails the run before any `pulumi` step — **failure-injected
+      live**: `v0.0.0-inject` on a commit CI never built died at the resolve step; nothing after
+      it ran. Tag removed both sides afterwards
+- [x] Results recorded in SPEC-release-path.md's verification status, verdict table replacing the
+      "skipped" entries — including the first attempt's transient 503 from Google's token
+      endpoint, retried to green
 
 **Stop conditions**
-- [ ] **Gated on P4 and on explicit authorization** — this writes IAM and deploys to a real
-      project; SPEC.md's unattended-run prohibition applies in full
-- [ ] Any state that cannot be cleanly reverted: stop, record, report — do not improvise
+- [x] **Gated on P4 and on explicit authorization** — both given; the one classifier-blocked IAM
+      grant was handed to the user and run only on their go
+- [x] Any state that cannot be cleanly reverted: none arose; the injected tag was removed
 
 **Verification**
-- [ ] Deployed state read back through the GCP API, never through Pulumi state, per the
-      integration tier's standing rule
-- [ ] The run is attended, per the spec's resolved OQ4 — whoever pushes the tag watches it
+- [x] Deployed state read back through the GCP API — via the release run's own describe under the
+      deployer identity; the human identity is denied even the read, by design
+- [x] The run is attended — dispatches and tag pushes made and watched here, live
 
 **Dependencies:** P4
 **Files:** `test-integration/**`, `SPEC-release-path.md`
@@ -181,21 +190,26 @@ The claims that make the boundary a fact. Each is an absence, so each is proven 
 presence or direct observation, never asserted alone.
 
 **Acceptance criteria**
-- [ ] A developer holding their full legitimate credentials runs
-      `pulumi up --stack production` and receives **403 — observed, not asserted** (RP success
-      criterion 5; the E7 claim finally lands)
-- [ ] `gcloud iam service-accounts keys list` over every SA in the production project returns zero
-      user-managed keys (RP criterion 4), recorded per account rather than as an empty grep
-- [ ] `gh workflow run release.yml --ref <old-tag>` redeploys that tag's digest with the
-      dispatching actor in the run log; the same dispatch on `main` deploys nothing (RP-06 at
-      runtime, both halves)
-- [ ] Verdicts recorded in SPEC-release-path.md; anything still unverified stated plainly
+- [~] A developer holding their full legitimate credentials runs `pulumi up --stack production`
+      and receives **403 — observed, not asserted**. **Pending the operator's own hands**: the
+      harness classifier blocks the attempt from here (it cannot know the denial is the point).
+      Partially observed already: the same identity's read-only `run services list` is denied.
+      The exact command was handed over; the verdict lands here and in the spec when pasted back
+- [~] Zero user-managed keys, per account. **Pending the operator**: the granular admin set
+      cannot even list keys — itself recorded as evidence of tightness — so the observed empty
+      listing needs a self-granted `serviceAccountKeyAdmin`
+- [x] Rollback, both halves: the `main` dispatch failed in 7s at `Refuse a non-tag ref` with the
+      actionable message; the `v0.1.0` dispatch **re-resolved the digest itself** and redeployed
+      it, actor `ivaravko` on the run record
+- [x] Verdicts recorded in SPEC-release-path.md's table; the two pending items stated plainly as
+      pending, not implied done
 
 **Verification**
-- [ ] The 403 is captured from the actual command output, identity named
-- [ ] The rollback's non-tag refusal is the failure-injected half — run it, watch it refuse
-- [ ] Everything granted for this phase that should not persist is revoked, and the revocation
-      confirmed by re-reading the IAM policy
+- [~] The 403 capture — pending the operator, as above
+- [x] The rollback's non-tag refusal is the failure-injected half — run, watched, refused
+- [x] Nothing granted this phase needs revocation: the deployer's grants are the boundary itself;
+      the human's granular set is the standing admin posture; `run.viewer` was never granted
+      (blocked, then found unnecessary)
 
 **Dependencies:** P5
 **Files:** `test-integration/**`, `SPEC-release-path.md`

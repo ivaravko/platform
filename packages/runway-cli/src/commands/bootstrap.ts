@@ -317,6 +317,11 @@ const provision = async (options: ProvisionOptions): Promise<void> => {
             repository: options.repository,
             // main pushes images; version tags release them. See EP-02.
             refs: ["refs/heads/main", "refs/tags/v*"],
+            // The images live in staging's registry; the production deployer
+            // pushes and resolves there once the repository variables move to
+            // it. Without this the first image push after cutover 403s.
+            // Derived, like every project id here.
+            imageProject: `${options.service}-staging`,
             existingPolicy: { bindings: productionPolicy.bindings },
             customRolePermissions: productionPolicy.customRolePermissions,
           },

@@ -118,15 +118,20 @@ Per task, on top of its own acceptance criteria:
 
 ## Open Questions
 
-1. ~~Which project does E7 audit as "production"?~~ **Resolved 2026-08-26: refusal-only.** No clean
-   production target exists, so E7 proves EP-06 refusing the owner-held sandbox and previews the
-   staging path; the acceptance path — and the observed 403 that is this module's central claim —
-   is recorded plainly as **unverified**, per E7's own stop condition. EP-06 is not weakened to
-   manufacture a pass.
-2. ~~Is `runway bootstrap` authorized to write IAM, and to which projects?~~ **Resolved 2026-08-26:
-   no — preview only.** The integration tier reads IAM policies and runs `pulumi preview`; it
-   writes nothing and grants nothing. The durable-grant path stays unexercised until this decision
-   is revisited, and E7's scope narrows accordingly.
+1. ~~Which project does E7 audit as "production"?~~ ~~Resolved 2026-08-26: refusal-only.~~
+   **Reversed later the same day, by P4 of the [v1 close-out](plan.md).** A clean target now
+   exists: `first01-production`, created under `ihar-org`, with the creator's `roles/owner`
+   replaced by a granular non-deploy admin set (`serviceAccountAdmin`, `workloadIdentityPoolAdmin`,
+   `storage.admin`, `projectIamAdmin` — none carries a `run.*` verb; org-level
+   `organizationAdmin` keeps the demotion recoverable). EP-06's **acceptance path ran for the
+   first time** and adopted it. The refusal-only finding below stands as what was true when E7
+   ran; the sandbox still cannot serve, for the same reason as before.
+2. ~~Is `runway bootstrap` authorized to write IAM, and to which projects?~~ ~~Resolved
+   2026-08-26: no — preview only.~~ **Reversed later the same day, by P4, scoped to
+   `first01-staging`/`first01-production`.** The first real `--yes` run applied 12 resources in
+   31s, adopting the hand-made staging half unchanged (9 same); a second apply added the
+   cross-project image-writer grant that run surfaced as missing. Verdicts live in
+   [SPEC-release-path.md](../SPEC-release-path.md)'s verification status.
 3. **`service-stacks` carries 3 unresolved open questions** and depends on this module. Worth
    resolving before E6 fixes the shape of `--print-config`, since that is the seam between them.
 4. **`release-path` has no spec.** It is last in the build order, so this does not block the E-series

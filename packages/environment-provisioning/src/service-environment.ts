@@ -53,6 +53,20 @@ export interface CiDeployer {
 
   /** Resolved permissions for custom roles in `existingPolicy`, if any. */
   readonly customRolePermissions?: Readonly<Record<string, readonly string[]>>;
+
+  /**
+   * The project whose registry holds this service's images — staging, in the
+   * paved-road layout: `main` pushes them there and a release resolves its
+   * digest from there. When set, the deployer is granted
+   * `roles/artifactregistry.writer` on that project, because one identity
+   * does both jobs and the images live across the project boundary.
+   *
+   * Found by the first real bootstrap run, not by reading: without this, the
+   * image push 403s the moment the repository variables move to the
+   * production identity. Writer carries no deploy verb — the deploy
+   * permission set proves it — so "staging is deployed by people" survives.
+   */
+  readonly imageProject?: string;
 }
 
 /**
@@ -144,6 +158,9 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
 
   /** The publisher's one grant: registry writer, and nothing else. */
   public readonly imagePublisherGrant?: gcp.projects.IAMMember;
+
+  /** Production's writer on the image project's registry. See `CiDeployer.imageProject`. */
+  public readonly imageAccessGrant?: gcp.projects.IAMMember;
 
   constructor(
     name: string,
@@ -280,6 +297,20 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
               ),
           );
 
+    // One identity, both jobs: main pushes images, tags promote them — and
+    // the images live in another project's registry, so the writer grant has
+    // to cross the boundary with the identity.
+    const imageProject =
+      "ci" in args.deployableBy ? args.deployableBy.ci.imageProject : undefined;
+    this.imageAccessGrant =
+      imageProject === undefined || member === undefined
+        ? undefined
+        : new gcp.projects.IAMMember(
+            `${name}-image-access`,
+            { project: imageProject, role: "roles/artifactregistry.writer", member },
+            { parent: this },
+          );
+
     // State access on the bucket, not project-wide: the deployers read and
     // write this environment's state and nothing else's.
     this.stateAccessGrant =
@@ -327,6 +358,7 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
       federation: this.federation,
       imagePublisher: this.imagePublisher,
       imagePublisherGrant: this.imagePublisherGrant,
+      imageAccessGrant: this.imageAccessGrant,
     });
   }
 }
