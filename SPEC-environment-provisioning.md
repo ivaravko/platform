@@ -471,10 +471,19 @@ it writes nothing and grants nothing.
   group's `roles/run.developer` grant, and bucket-scoped state access — the same shapes the offline
   mocks assert, so the two tiers cannot quietly diverge.
 
+- **A real environment exists because this module made it** (2026-08-26, service `first01`):
+  `runway bootstrap first01 … --yes` adopted the hand-created `first01-staging`, created its state
+  bucket, and every EP-05 property read back from Google — versioned, uniform bucket-level access,
+  public access prevention enforced. The service repo then deployed to it by the documented
+  developer flow, and the running service's audit trail names the person (RP-04). EP-07 reported
+  the service incomplete on every run, correctly: production was never adopted.
+
 **Deliberately unverified, and by whose decision:**
-- **The acceptance path.** No clean production project exists (OQ1: refusal-only), so no adoption
-  has succeeded end to end, no WIF pool exists in reality, and bootstrap has never written a grant
-  (OQ2: preview-only).
+- **The production acceptance path.** Staging's write authorization was granted and used
+  (2026-08-26, superseding OQ2's preview-only for that scope), but production was skipped by
+  decision: no production project was created, so no WIF pool exists in reality, no deploy grant
+  has ever been written, and EP-01/EP-02/EP-03/EP-06 remain enforced against nothing — exactly
+  what EP-07 keeps reporting.
 - **The observed 403 — this module's central claim.** *A developer holding every credential they
   legitimately possess still cannot deploy to production* remains a design, not a fact, until a
   clean production target exists and writes are authorized. Every mocked binding assertion above

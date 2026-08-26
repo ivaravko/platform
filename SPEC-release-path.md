@@ -104,6 +104,12 @@ nothing pushed exits non-zero *and* yields no digest — either half alone stops
 a deploy step. The positive half, a present tag resolving, waits for the first real release: nothing
 can push an image until a generated repo's CI has federation.
 
+**RP-04 is observed** (2026-08-26): the `first01` staging service's audit trail names the person
+who deployed it, from their own credentials — read back from Google, not asserted. The release legs
+— a tag push federating into production, RP-01/RP-02/RP-06 at runtime, and the 403 — were skipped
+with production by the user's decision; the sha-tagged artifact the first release will resolve is
+already in the staging registry, waiting.
+
 ## Rollback is the same release, dispatched
 
 Production rolls back through an explicit path, and the path is not a new mechanism. `release.yml`
