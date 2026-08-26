@@ -194,6 +194,8 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 - Adding a `runway deploy` command. It was considered and declined; reversing that is a decision.
 - Deploying production on anything other than a tag.
 - Any approval gate — the current design is IAM-only, with no human in the release loop.
+- Any failure alerting. Considered and declined: a red run is the signal, and the tag pusher watches
+  it. Reversing that is a decision.
 
 **Never**
 - Deploy production from a developer's machine, or add a path that would allow it.
@@ -232,6 +234,8 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 3. ~~What resolves the tag — `gcloud` or the Pulumi provider?~~ **Resolved: `gcloud`.** The runner
    ships it, federation authenticates it without another moving part, and its failure mode — a
    non-zero exit on a missing image — is exactly the gate RP-03 needs, before any deploy step.
-4. **Does a failed production deploy notify anyone?** A red workflow is visible to whoever looks. If
-   releases are expected to be unattended, silence on failure is the wrong default — but alerting is
-   not specified anywhere in this initiative yet.
+4. ~~Does a failed production deploy notify anyone?~~ **Resolved: no.** A red run is the failure
+   signal, and nothing else is built. The consequence is accepted rather than hidden: releases are
+   attended by convention — whoever pushes the tag owns watching the run, and the same for a
+   rollback dispatch. If unattended releases ever become the expectation, this is the decision to
+   revisit first.
