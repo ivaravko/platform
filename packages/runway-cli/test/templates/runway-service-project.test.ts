@@ -1,7 +1,9 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { RunwayServiceProject } from "../../src";
 import { withLocalPackages } from "../support/local-links";
@@ -38,6 +40,82 @@ const isHumanRead = (file: string): boolean =>
   file === "README.md" ||
   file === ".projenrc.ts" ||
   file === ".oxlintrc.json";
+
+/**
+ * Source with comments removed.
+ *
+ * src/server/index.ts explains in prose why it resolves from the working
+ * directory *instead of* `__dirname`, and that explanation must not trip the
+ * rule it documents.
+ */
+const withoutComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+
+/** A port nothing else holds: bind zero, read what the OS gave back, release it. */
+const freePort = async (): Promise<number> =>
+  new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once("error", reject);
+    probe.listen(0, () => {
+      const address = probe.address();
+      if (address === null || typeof address === "string") {
+        reject(new Error("expected a TCP address"));
+        return;
+      }
+      const { port } = address;
+      probe.close(() => resolve(port));
+    });
+  });
+
+/**
+ * Start the generated repo's compiled server the way the Dockerfile does —
+ * `node lib/server/index.js`, port from the environment.
+ *
+ * Polled rather than slept: the server prints nothing on listen, so there is no
+ * line to wait for, and a fixed sleep is either slower than it needs to be or
+ * flaky on a loaded machine.
+ */
+const startServer = async (dir: string): Promise<{ base: string; stop: () => void }> => {
+  const port = await freePort();
+  const child = spawn("node", ["lib/server/index.js"], {
+    cwd: dir,
+    // NODE_ENV must not be "test" here. The generated server guards listen() on
+    // it so its own vitest suite can import the module without binding a port —
+    // and vitest sets it in *this* process, so an inherited environment makes
+    // the server exit 0 without ever listening. The image runs it without.
+    env: { ...process.env, NODE_ENV: "production", PORT: String(port) },
+    stdio: "pipe",
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const stop = (): void => {
+    child.kill();
+  };
+
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (child.exitCode !== null) {
+      throw new Error(`server exited with code ${child.exitCode} before it listened`);
+    }
+    try {
+      await fetch(`${base}/healthz`);
+      return { base, stop };
+    } catch {
+      await delay(25);
+    }
+  }
+
+  stop();
+  throw new Error(`server at ${base} did not start within 5s`);
+};
+
+/**
+ * The root-relative URLs a document pulls in.
+ *
+ * Read out of the built HTML rather than hardcoded, because the whole point is
+ * to assert what vite actually emitted — including the hashed filenames and the
+ * directory it chose to put them in.
+ */
+const assetsReferencedBy = (html: string): string[] =>
+  [...html.matchAll(/(?:src|href)="(\/[^"]*)"/g)].map(([, href]) => href ?? "");
 
 let outdir: string;
 let tree: string[];
@@ -171,6 +249,71 @@ describe("TypeScript 7 survival kit", () => {
     expect(eslintDeps).toEqual([]);
   });
 
+  it("LD-07: registers a dev task that no gate task can reach", () => {
+    const tasks = JSON.parse(read(".projen/tasks.json")) as {
+      tasks: Record<string, { steps?: { spawn?: string; exec?: string }[] }>;
+    };
+
+    expect(tasks.tasks.dev).toBeDefined();
+
+    // Transitively, not just one level down: `build` spawns `test`, which
+    // spawns `lint`, and a watcher anywhere under that is a CI job that never
+    // exits. Walk the whole tree rather than trusting the shape of it.
+    const reachable = (name: string, seen = new Set<string>()): Set<string> => {
+      if (seen.has(name)) return seen;
+      seen.add(name);
+      for (const step of tasks.tasks[name]?.steps ?? []) {
+        if (step.spawn !== undefined) reachable(step.spawn, seen);
+      }
+      return seen;
+    };
+
+    for (const gate of ["build", "compile", "test", "package"]) {
+      expect([...reachable(gate)]).not.toContain("dev");
+    }
+  });
+
+  /**
+   * The regression guard for the bug `npm run dev` found.
+   *
+   * `node --watch` runs src/ straight from TypeScript, and Node infers the
+   * module system from the file's syntax — so an `import` anywhere makes the
+   * file an ES module, where `__dirname` does not exist. `tsc` emits CommonJS
+   * for lib/, so the same source works compiled and crashes in the dev loop.
+   * `import.meta` is the mirror image: fine in dev, a syntax error in the
+   * CommonJS output the image runs.
+   *
+   * Neither can be used in generated src/ until the scaffold commits to one
+   * module system. Asserted, because the failure only appears at runtime and
+   * only in one of the two paths.
+   */
+  it("LD-03: generated src/ uses neither __dirname nor import.meta", () => {
+    const offenders = tree
+      .filter((file) => file.startsWith("src/"))
+      .filter((file) => /\b__dirname\b|\bimport\.meta\b/.test(withoutComments(read(file))));
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("LD-04: proxies server routes so development has one origin", () => {
+    const config = read("vite.config.ts");
+
+    // The alternative to a proxy is an API base URL in the environment, which
+    // is a dev-only value that reaches production code.
+    expect(config).toContain("proxy");
+    expect(config).toContain('"/api"');
+    expect(config).toContain('"/healthz"');
+
+    // No API base URL anywhere in the service's own source. Not the same as
+    // "no env var at all": the server reads PORT because Cloud Run supplies it,
+    // and guards listen() on NODE_ENV so its own suite can import the module.
+    // Those are runtime facts, not a development branch.
+    for (const file of tree.filter((f) => f.startsWith("src/"))) {
+      expect(read(file)).not.toMatch(/API_(BASE_)?URL|VITE_API|BASE_URL/);
+      expect(read(file)).not.toMatch(/NODE_ENV\s*===?\s*["'](development|production)["']/);
+    }
+  });
+
   it("registers lint and lint:fix tasks", () => {
     const { tasks } = JSON.parse(read(".projen/tasks.json")) as {
       tasks: Record<string, { steps?: { exec?: string }[] }>;
@@ -214,11 +357,10 @@ describe("scaffold content", () => {
     expect(read("src/server/index.ts")).toMatch(/healthz/);
   });
 
-  it("serves the built client from the same process", () => {
-    // One container: the SPA and the API share an image, so infra/ provisions
-    // one Cloud Run service and nothing about the stack changes.
-    expect(read("src/server/index.ts")).toMatch(/dist|client/);
-  });
+  // "serves the built client from the same process" used to live here as a
+  // regex over src/server/index.ts. It is now asserted by fetching the page and
+  // its assets from a running server — see LD-09 under "build-out". A grep left
+  // beside that would get cited as coverage it never was.
 
   it("ships a client that renders something", () => {
     expect(read("src/client/App.tsx")).toMatch(/<h1|return \(/);
@@ -239,41 +381,159 @@ describe("scaffold content", () => {
 });
 
 describe("build-out", () => {
+  /**
+   * One scaffold, installed and built once, shared by everything below.
+   *
+   * Hoisted out of the single test it used to live in because LD-09 needs the
+   * *built* client, and a second `npm install` would roughly double the slowest
+   * thing in the pull-request gate. `npm run build` runs here rather than in
+   * the test below for the same reason — a failure still fails the whole
+   * describe, which is what the test asserted anyway.
+   */
+  let dir: string;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "runway-buildout-"));
+    withLocalPackages(() =>
+      new RunwayServiceProject({
+        name: "demo",
+        outdir: dir,
+        region: "europe-west1",
+      }).synth(),
+    );
+    // Install precedes projen: .projenrc.ts imports projen and cannot run
+    // before node_modules exists.
+    for (const [cmd, args] of [
+      ["npm", ["install"]],
+      ["npx", ["projen"]],
+      ["npm", ["run", "build"]],
+    ] as const) {
+      execFileSync(cmd, args, { cwd: dir, stdio: "pipe" });
+    }
+  }, 600_000);
+
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   // The test that matters: anything less proves only that we can write files.
-  it(
-    "builds, tests and lints unmodified in a temp directory",
-    { timeout: 600_000 },
-    () => {
-      const dir = mkdtempSync(join(tmpdir(), "runway-buildout-"));
+  it("builds, tests and lints unmodified in a temp directory", { timeout: 600_000 }, () => {
+    for (const [cmd, args] of [
+      ["npm", ["test"]],
+      ["npm", ["run", "lint"]],
+    ] as const) {
+      execFileSync(cmd, args, { cwd: dir, stdio: "pipe" });
+    }
+    // Idempotence: a second synth must change nothing.
+    const before = treeOf(dir).map((f) => `${f}:${readFileSync(join(dir, f), "utf-8")}`);
+    execFileSync("npx", ["projen"], { cwd: dir, stdio: "pipe" });
+    const after = treeOf(dir).map((f) => `${f}:${readFileSync(join(dir, f), "utf-8")}`);
+    expect(after).toEqual(before);
+  });
+
+  /**
+   * LD-09. What replaced a grep.
+   *
+   * The assertion this supersedes matched /dist|client/ against the *source
+   * text* of src/server/index.ts. It passed whether or not a single byte ever
+   * reached a browser, which is the only thing anyone actually cares about.
+   *
+   * So: build the client, start the real server, and ask it for the page and
+   * for every asset that page references.
+   */
+  describe("LD-09: the built client is served", () => {
+    let base: string;
+    let stop: () => void;
+
+    beforeAll(async () => {
+      const started = await startServer(dir);
+      base = started.base;
+      stop = started.stop;
+    }, 60_000);
+
+    afterAll(() => {
+      stop?.();
+    });
+
+    it("serves the document vite built, not merely a 200", async () => {
+      const response = await fetch(base + "/");
+
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      // The built document, not the source index.html: vite rewrites the
+      // module script into a bundled asset reference.
+      expect(body).toContain('<div id="root">');
+      expect(assetsReferencedBy(body).length).toBeGreaterThan(0);
+    });
+
+    it("serves every asset the document references", async () => {
+      const body = await (await fetch(base + "/")).text();
+      const assets = assetsReferencedBy(body);
+
+      const statuses = await Promise.all(
+        assets.map(async (href) => [href, (await fetch(base + href)).status] as const),
+      );
+
+      // Named individually: "some asset 404s" is a bug report nobody can act on.
+      expect(statuses.filter(([, status]) => status !== 200)).toEqual([]);
+    });
+
+    it("still serves the health endpoint", async () => {
+      const response = await fetch(base + "/healthz");
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ status: "ok" });
+    });
+
+    /**
+     * Failure injection, without a rebuild: take the built client away and the
+     * page must stop being served. A serving test that cannot fail on missing
+     * build output is not evidence — it is the same silent pass this whole
+     * task exists to remove.
+     */
+    it("fails when the built client is not where the server looks", async () => {
+      const built = join(dir, "dist", "client");
+      const moved = join(dir, "dist", "client.injected");
+      renameSync(built, moved);
       try {
-        withLocalPackages(() =>
-          new RunwayServiceProject({
-            name: "demo",
-            outdir: dir,
-            region: "europe-west1",
-          }).synth(),
-        );
-        // Install precedes projen: .projenrc.ts imports projen and cannot run
-        // before node_modules exists.
-        for (const [cmd, args] of [
-          ["npm", ["install"]],
-          ["npx", ["projen"]],
-          ["npm", ["run", "build"]],
-          ["npm", ["test"]],
-          ["npm", ["run", "lint"]],
-        ] as const) {
-          execFileSync(cmd, args, { cwd: dir, stdio: "pipe" });
-        }
-        // Idempotence: a second synth must change nothing.
-        const before = treeOf(dir).map((f) => `${f}:${readFileSync(join(dir, f), "utf-8")}`);
-        execFileSync("npx", ["projen"], { cwd: dir, stdio: "pipe" });
-        const after = treeOf(dir).map((f) => `${f}:${readFileSync(join(dir, f), "utf-8")}`);
-        expect(after).toEqual(before);
+        expect((await fetch(base + "/")).status).not.toBe(200);
       } finally {
-        rmSync(dir, { recursive: true, force: true });
+        renameSync(moved, built);
       }
-    },
-  );
+    });
+
+    /**
+     * The other direction. A server answering index.html for every path passes
+     * the weak version of the asset test above while rendering a blank page, so
+     * prove it refuses something it was never given.
+     */
+    it("does not answer 200 for a path it never emitted", async () => {
+      const response = await fetch(base + "/nothing-was-ever-emitted-here.js");
+
+      expect(response.status).not.toBe(200);
+    });
+
+    /**
+     * The containment guard, asserted rather than assumed.
+     *
+     * `basename()` used to make traversal structurally impossible; serving
+     * nested asset paths gave that up, so the bound that replaced it has to be
+     * tested. Percent-encoded, deliberately: a literal `/../../` is collapsed
+     * by URL parsing before it ever leaves fetch, so it would prove nothing.
+     *
+     * 403 exactly, not "not 200" — a 404 would pass a weaker assertion while
+     * meaning the file merely happened to be absent.
+     */
+    it.each([
+      ["encoded separators", "/..%2f..%2fpackage.json"],
+      ["encoded dots and separators", "/%2e%2e%2f%2e%2e%2fpackage.json"],
+      ["a traversal below the asset directory", "/assets%2f..%2f..%2fpackage.json"],
+    ])("refuses %s", async (_case, path) => {
+      const response = await fetch(base + path);
+
+      expect(response.status).toBe(403);
+    });
+  });
 });
 
 describe("stack configuration", () => {

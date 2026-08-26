@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { runBootstrap } from "./commands/bootstrap";
+import { runDoctor } from "./commands/doctor";
 import { UsageError, runNew } from "./commands/new";
 
 /**
@@ -17,6 +18,7 @@ Usage:
                        Create ./<name> as a new service repository
   runway bootstrap <name> --staging-project <id> [flags]
                        Plan or configure the service's environments
+  runway doctor        Check node, npm, pulumi, gcloud and registry auth
   runway --help        Show this message
 
 Arguments:
@@ -60,6 +62,10 @@ const main = async (argv: string[]): Promise<number> => {
   if (command === "bootstrap") {
     await runBootstrap(rest);
     return 0;
+  }
+
+  if (command === "doctor") {
+    return runDoctor();
   }
 
   process.stderr.write(

@@ -39,6 +39,11 @@ pulumi preview  (real GCP)     → exit 0, 7 resources planned
   with the policy pack         → ✅ runway-gcp@v0.0.1, no violations
 ```
 
+The generated repo has a dev loop: `npm run dev` serves the client with hot replacement and forwards
+`/api/*` and `/healthz` to the Node server on one origin. `runway doctor` reports what a machine is
+missing before `npm install` fails — most usefully the Artifact Registry credential, without which a
+fresh clone gets a bare npm 401. See [SPEC-local-development.md](SPEC-local-development.md).
+
 `infra/index.ts` is the load-bearing artifact: it composes all three components and is deployable
 unmodified.
 
@@ -151,8 +156,8 @@ Stated plainly, because the specs describe more than exists:
 
 - **`runway` is not published.** It runs from this repo; the registry decision is open
   ([SPEC.md](SPEC.md), open question 2), and a scaffolded repo depends on the CLI by local path.
-- **No CLI flags and no `runway doctor`.** [SPEC-runway-cli.md](SPEC-runway-cli.md) describes
-  `--gcp-project`, `--region` and `--dry-run`; none is implemented.
+- **No `--gcp-project` or `--dry-run` flag.** [SPEC-runway-cli.md](SPEC-runway-cli.md) describes
+  both; neither is implemented. `--region` and `runway doctor` now are.
 - **No Dockerfile is emitted.** The scaffold produces a service and its infrastructure, not an image
   build.
 - **The integration tier is not scheduled.** It runs only when invoked by hand — the nightly

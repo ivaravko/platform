@@ -69,7 +69,32 @@ const CLIENT_DEV = [
   "happy-dom@^20",
   "@testing-library/react@^16",
   "@testing-library/dom@^10",
+  // The dev loop runs two watchers under one command; projen tasks execute
+  // their steps sequentially, so something has to supervise them. The
+  // alternatives were a shell `&` (orphans the server on Ctrl-C), two terminals
+  // (fails the one-command requirement) and a hand-rolled vite plugin spawning
+  // a child process (bespoke supervision in every generated repo, forever).
+  // Argued and agreed separately -- see SPEC-runway-cli.md's dependency table.
+  "concurrently@^9",
 ] as const;
+
+/**
+ * Where the server listens in development, and the one port the proxy targets.
+ *
+ * 8080 because that is what the server already defaults to and what Cloud Run
+ * supplies -- so nothing in src/ has to know it is running locally.
+ */
+const DEV_SERVER_PORT = 8080;
+
+/**
+ * The prefix reserved for server routes, in development and in production.
+ *
+ * Everything else belongs to the client. Reserved now rather than when the
+ * first team needs it: the proxy is what routes a request to the server, so a
+ * repo that has not reserved a prefix sends `/users` to the client and returns
+ * a confusing 404. Changing this later breaks every repo already generated.
+ */
+const API_PREFIX = "/api";
 const OXLINT = "oxlint@1.80.0";
 const OXLINT_TSGOLINT = "oxlint-tsgolint@7.0.2001";
 
@@ -87,7 +112,7 @@ const OXLINT_TSGOLINT = "oxlint-tsgolint@7.0.2001";
  * upgrade may resolve to without changing what an ordinary install gets.
  */
 const RUNWAY_VERSION = "^0.1.0";
-const RUNWAY_REGISTRY =
+export const RUNWAY_REGISTRY =
   "https://europe-west1-npm.pkg.dev/enduring-badge-506610-u9/runway/";
 
 /**
@@ -236,6 +261,7 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
     this.addContainerImage(options.region);
     this.addReleaseWorkflow(options.region);
     this.addClientBuild();
+    this.addDevTask();
     this.testTask.exec("vitest run", { receiveArgs: true });
     this.addLintTasks();
     this.addOxlintConfig();
@@ -574,6 +600,34 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
     this.compileTask.spawn(client);
   }
 
+  /**
+   * The loop the repo previously had no answer for.
+   *
+   * Two watchers, one command. vite serves the client with hot replacement and
+   * forwards server routes to the Node process, so the browser talks to one
+   * origin -- the same shape as production, which is what makes both a CORS
+   * config and an API-base-URL environment variable unnecessary.
+   *
+   * `node --watch` runs src/server/index.ts *directly*: Node 22.18 strips types
+   * itself, and ts-node -- the usual answer -- cannot load under TypeScript 7
+   * at all. So there is no compiler in the loop. The cost is that the dev server
+   * does not typecheck; `tsc` still runs in compile and in CI.
+   *
+   * Deliberately not spawned by build, compile or test: a watcher in the
+   * pull-request gate is a job that never exits.
+   */
+  private addDevTask(): void {
+    this.addTask("dev", {
+      description: "Run the client and server locally, reloading on change",
+      exec: [
+        "concurrently --kill-others --names client,server",
+        '"vite"',
+        `"node --watch src/server/index.ts"`,
+      ].join(" "),
+      env: { PORT: String(DEV_SERVER_PORT) },
+    });
+  }
+
   /** projen has no oxlint component, so the tasks are registered by hand. */
   private addLintTasks(): void {
     const lint = this.addTask("lint", {
@@ -712,6 +766,17 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
         "  plugins: [react()],",
         "  // The server serves this directory; keep the two in step.",
         `  build: { outDir: "dist/client" },`,
+        "  // One origin in development. vite serves the client and forwards",
+        `  // ${API_PREFIX}/* and /healthz to the Node server, so the browser talks to`,
+        "  // a single host -- the same shape as production. That is what makes a",
+        "  // CORS config unnecessary, and an API base URL in the environment: a",
+        "  // dev-only variable that reaches production code is how this goes wrong.",
+        "  server: {",
+        "    proxy: {",
+        `      "${API_PREFIX}": "http://localhost:${DEV_SERVER_PORT}",`,
+        `      "/healthz": "http://localhost:${DEV_SERVER_PORT}",`,
+        "    },",
+        "  },",
         "});",
         "",
       ].join("\n"),
@@ -721,11 +786,16 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
       contents: [
         `import { readFile } from "node:fs/promises";`,
         `import { createServer } from "node:http";`,
-        `import { basename, extname, join } from "node:path";`,
+        `import { extname, resolve, sep } from "node:path";`,
         "",
         "/** Cloud Run supplies PORT; 8080 is its default. */",
         "const port = Number(process.env.PORT ?? 8080);",
-        `const clientDir = join(__dirname, "..", "..", "dist", "client");`,
+        "// Relative to the working directory, not to this file. The image sets",
+        "// WORKDIR /app and copies dist/ beside lib/, and `npm run dev` runs from",
+        "// the repo root -- so both resolve here. __dirname would not: `npm run",
+        "// dev` runs this file as an ES module (Node infers the module type from",
+        "// its import syntax), and __dirname does not exist there.",
+        `const clientDir = resolve("dist/client");`,
         "",
         "const contentTypes: Record<string, string> = {",
         `  ".html": "text/html",`,
@@ -740,12 +810,26 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
         "    return;",
         "  }",
         "",
-        "  // Everything else is the single-page app. Only the basename is used,",
-        "  // so a crafted URL cannot walk out of the client directory.",
-        `  const requested = (req.url ?? "/").split("?")[0];`,
-        `  const file = requested === "/" ? "index.html" : basename(requested);`,
+        "  // Everything else is the single-page app. vite emits hashed assets",
+        "  // into a subdirectory, so the request path must be honoured rather",
+        "  // than reduced to its basename -- and then bounded, because honouring",
+        "  // it is exactly what lets a crafted URL try to walk out of clientDir.",
+        "  let requested: string;",
+        "  try {",
+        `    requested = decodeURIComponent((req.url ?? "/").split("?")[0]);`,
+        "  } catch {",
+        "    res.writeHead(400).end();",
+        "    return;",
+        "  }",
         "",
-        "  readFile(join(clientDir, file))",
+        `  const relativePath = requested.replace(/^\\/+/, "");`,
+        `  const file = resolve(clientDir, relativePath === "" ? "index.html" : relativePath);`,
+        "  if (file !== clientDir && !file.startsWith(clientDir + sep)) {",
+        "    res.writeHead(403).end();",
+        "    return;",
+        "  }",
+        "",
+        "  readFile(file)",
         "    .then((body) => {",
         "      res.writeHead(200, {",
         `        "content-type": contentTypes[extname(file)] ?? "application/octet-stream",`,
@@ -897,11 +981,25 @@ const renderReadme = (name: string): string =>
     "```bash",
     "npm install        # must precede projen: .projenrc.ts imports it",
     "npx projen         # regenerate config after editing .projenrc.ts",
+    "npm run dev        # client and server, reloading on change",
     "npm run build      # compile, then test, then lint",
     "npm test",
     "npm run lint       # oxlint, type-aware; warnings fail the build",
     "npm run lint:fix",
     "```",
+    "",
+    "## Developing",
+    "",
+    "`npm run dev` opens one URL. vite serves the client with hot replacement",
+    `and forwards \`${API_PREFIX}/*\` and \`/healthz\` to the Node server on ${DEV_SERVER_PORT}, so the`,
+    "browser talks to a single origin — the same shape as production. Put server",
+    `routes under \`${API_PREFIX}/\`; everything else is the client.`,
+    "",
+    "**The dev server strips types, it does not check them.** `node --watch`",
+    "runs the server straight from TypeScript source using Node's own type",
+    "stripping, so a type error will not stop it — `npm run build` and CI still",
+    "typecheck with `tsc`. Type stripping also rejects a few constructs outright",
+    "(`enum`, `namespace`, constructor parameter properties); prefer plain types.",
     "",
     "## CI",
     "",

@@ -3,6 +3,9 @@
 Module `runway-cli` of the [Platform capability map](SPEC.md#capability-map). **Build second — depends on `gcp-components`.**
 Shared toolchain, code style, and boundaries are inherited from [SPEC.md](SPEC.md).
 
+Feature specs scoped to this module: [SPEC-local-development.md](SPEC-local-development.md) — the
+generated repo's `dev` loop and `runway doctor`.
+
 ## Objective
 
 A CLI that scaffolds a minimal, projen-managed git repository for a new GCP service — build, test,
@@ -121,10 +124,16 @@ changes the entry-point shape. Spec'd here as a standalone `bin` for now.
 | `@vitejs/plugin-react` | JSX transform |
 | `happy-dom` | vitest needs a DOM to render a component into |
 | `@testing-library/react`, `@testing-library/dom` | Rendering a component in a test; the second is a peer of the first and must be declared |
+| `concurrently` | Runs the client and server watchers under one `npm run dev` — projen tasks execute sequentially |
 
 Four runtime and dev additions to a repo that previously had none beyond vitest, which
 [SPEC.md](SPEC.md#boundaries) makes ask-first. They were asked for and agreed together with the SPA
 itself; adding a fifth is a fresh decision.
+
+**The fifth was made, on 2026-08-26: `concurrently`.** Asked for and agreed on its own terms, as
+that sentence required. The alternatives — a shell `&`, two terminals, or a hand-rolled vite plugin
+supervising a child process — are recorded with their costs in
+[SPEC-local-development.md](SPEC-local-development.md#tech-stack). A sixth remains a fresh decision.
 
 **The TypeScript 7 risk was real enough to check, and it passed.** ts-node broke and
 `typescript-eslint` became uninstallable on 7, so react + vite + `@types/react` was verified against
