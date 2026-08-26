@@ -37,9 +37,13 @@ beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), "runway-cli-"));
 });
 
+// 120s, not the 10s hook default: the end-to-end test leaves an installed
+// scaffold behind, and rmSync over its node_modules has been observed to
+// exceed 10s under a full monorepo build's I/O load — a flaked cleanup then
+// fails a test whose assertions all passed.
 afterEach(() => {
   rmSync(cwd, { recursive: true, force: true });
-});
+}, 120_000);
 
 describe("runway --help", () => {
   it("documents the new command and its argument", () => {
