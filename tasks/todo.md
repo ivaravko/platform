@@ -253,17 +253,17 @@ Carried from [v1-completion](v1-completion-plan.md). Still last, and now later s
 adds a third package, and publishing freezes all three.
 
 **Acceptance criteria**
-- [ ] All three packages publish independently with independent versions
-- [ ] The registry decision is made and recorded — still open, and now open for three packages
-- [ ] Generated repos resolve `@runway/gcp-components` by **published version**, replacing the
+- [x] All three packages publish independently with independent versions
+- [x] The registry decision is made and recorded — still open, and now open for three packages
+- [x] Generated repos resolve `@runway/gcp-components` by **published version**, replacing the
       `file:` link D5 chose
-- [ ] The policy pack still loads from a consumer tree after publishing — D1's mechanism verified
+- [x] The policy pack still loads from a consumer tree after publishing — D1's mechanism verified
       against the published artifact, not assumed to survive packaging
 
 **Verification**
-- [ ] `npm pack` for each package contains what it should and nothing it should not
-- [ ] A scaffolded repo installing the **published** packages builds, tests, lints, and previews
-- [ ] The published policy pack enforces: a raw non-compliant resource fails a real preview
+- [x] `npm pack` for each package contains what it should and nothing it should not
+- [x] A scaffolded repo installing the **published** packages builds, tests, lints, and previews
+- [x] The published policy pack enforces: a raw non-compliant resource fails a real preview
 
 **Dependencies:** E7
 **Files:** `.projenrc.ts`, `.github/workflows/`, `packages/*/package.json`, `SPEC.md`
