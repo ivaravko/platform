@@ -56,22 +56,22 @@ One of six SS ids appears in a test name today. The repo's rule — a control wi
 control — applies to its own specs, not only to components.
 
 **Acceptance criteria**
-- [ ] Each of SS-01–SS-06 and RP-01–RP-06 either appears in a passing named test or is listed in
+- [x] Each of SS-01–SS-06 and RP-01–RP-06 either appears in a passing named test or is listed in
       its spec's verification status with the reason it cannot be offline-tested (runtime-only
       proofs belong to P5/P6, and say so)
-- [ ] Existing assertions that already cover a control under another name are renamed to carry the
+- [x] Existing assertions that already cover a control under another name are renamed to carry the
       id, not duplicated — SS-06's length/leading-digit rules in `new.test.ts` are the known case
-- [ ] **Decided, ask-first: do SS/RP ids get `docs/control-mapping.md` rows?** The completeness
+- [x] **Decided, ask-first: do SS/RP ids get `docs/control-mapping.md` rows?** The completeness
       test is bidirectional, so a row is a standing commitment. Either way the decision and its
       reason land in the spec
-- [ ] The stale Corrections note in SPEC-service-stacks.md — the `?? "v1"` fallback it says is
+- [x] The stale Corrections note in SPEC-service-stacks.md — the `?? "v1"` fallback it says is
       "deliberately left" — reconciled with the code, which now throws naming both keys
 
 **Verification**
-- [ ] `npm test --workspace @runway/cli -- -t "SS-"` and `-t "RP-"` each run a non-empty,
+- [x] `npm test --workspace @runway/cli -- -t "SS-"` and `-t "RP-"` each run a non-empty,
       passing set
-- [ ] The control-mapping completeness test passes in whichever direction was decided
-- [ ] `npm run build` green at the root
+- [x] The control-mapping completeness test passes in whichever direction was decided
+- [x] `npm run build` green at the root
 
 **Dependencies:** P1 (same test files)
 **Files:** `packages/runway-cli/test/**`, `SPEC-service-stacks.md`, `SPEC-release-path.md`,
@@ -86,19 +86,22 @@ Service-stacks OQ3, plus the sharper half the spec understates: `publicAccess` i
 configuration, or a team opening staging opens production with it.
 
 **Acceptance criteria**
-- [ ] The decision is made and recorded in SPEC-service-stacks.md: staging may opt out via the
+- [x] The decision is made and recorded in SPEC-service-stacks.md: staging may opt out via the
       existing justified `publicAccess`, per stack, keyed on config — or it may not, with the
       reason
-- [ ] If allowed: the spec shows the worked config-keyed example (the pattern, not a new emitted
+- [x] If allowed: the spec shows the worked config-keyed example (the pattern, not a new emitted
       file — the scaffold stays minimal and private-by-default either way)
-- [ ] The scaffold's default output is unchanged: nothing public, no new file, no new config key
+- [x] The scaffold's default output is unchanged: nothing public, no new file, no new config key
       emitted
 
 **Verification**
-- [ ] If an example pattern is specified, a test proves the config-keyed opt-out on one stack
-      leaves the other stack's plan private — failure-injected by applying the opt-out and
-      asserting the *other* stack did not change
-- [ ] `pulumi preview` assertions stay in the existing tiers; nothing new touches GCP
+- [~] If an example pattern is specified, a test proves the config-keyed opt-out on one stack
+      leaves the other stack's plan private. **Satisfied by reference, not new code**: CR-03's
+      existing pair is exactly this — one construction with the opt-out plans one `allUsers`
+      binding, one without plans none. A new test would only re-prove Pulumi's per-stack config
+      isolation, and a weaker copy beside CR-03 would get cited as coverage. The spec resolution
+      names the pair
+- [x] `pulumi preview` assertions stay in the existing tiers; nothing new touches GCP
 
 **Dependencies:** None — parallel with P1–P2
 **Files:** `SPEC-service-stacks.md`, `packages/gcp-components/test/**` (only if the example lands)
@@ -107,10 +110,10 @@ configuration, or a team opening staging opens production with it.
 ---
 
 ### ✅ Checkpoint 1: the offline gaps are closed
-- [ ] A tag injected into a production stack config demonstrably fails a build
-- [ ] Twelve control ids: each named in a test or accounted for in a verification status
-- [ ] OQ3 resolved in the spec; scaffold output unchanged
-- [ ] Full gate green, offline, at the root
+- [x] A tag injected into a production stack config demonstrably fails a build
+- [x] Twelve control ids: each named in a test or accounted for in a verification status
+- [x] OQ3 resolved in the spec; scaffold output unchanged
+- [x] Full gate green, offline, at the root
 - [ ] Human review
 
 ---

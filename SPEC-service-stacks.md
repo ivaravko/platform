@@ -166,10 +166,12 @@ since an unset region deployed somewhere nobody chose rather than stopping. It n
 This cost no working configuration: `gcp:project` was already required, so a fresh scaffold could
 never preview without config anyway. The default was protecting nothing.
 
-**`imageTag`'s `?? "v1"` is deliberately left.** It is not a project id, region or credential, so the
-boundary does not reach it, and an unset tag fails visibly at deploy time with an image that does
-not exist rather than succeeding against the wrong thing. Worth revisiting alongside SS-02, where
-production must carry a digest rather than any tag at all.
+**The `?? "v1"` fallback this section once defended no longer exists.** The program now reads
+`config.get("imageTag")` with no default and throws when neither `imageDigest` nor `imageTag` is
+set, naming both keys — the stricter behaviour the earlier note said was worth revisiting. The
+revisit happened alongside SS-02's enforcement (P1 of the v1 close-out plan): production carries a
+digest or nothing, and the generated repo's own suite fails on a tag. Recorded because the earlier
+claim appeared here and drifted from the code, not because anything remains to do.
 
 ## Commands
 
@@ -202,6 +204,10 @@ npm test --workspace @runway/cli -- -t "service stacks"
 
 The build-out test is the one that matters. Asserting the *files* exist proves we can write YAML;
 running `pulumi preview` proves the program compiles, resolves config, and plans what it should.
+
+Every SS id is named in a passing test (`npm test --workspace @runway/cli -- -t "SS-"`). SS ids
+get **no rows** in [docs/control-mapping.md](docs/control-mapping.md) — decided 2026-08-26; the
+reason lives there, beside the rule it protects.
 
 ## Boundaries
 
@@ -245,6 +251,34 @@ Module-specific:
 2. ~~Does `runway new` create the Pulumi stacks, or only the files?~~ **Resolved: only the files.**
    `pulumi stack init` needs a reachable state backend, which would let `runway new` fail for
    reasons unrelated to scaffolding. The first `pulumi up` initialises.
-3. **Is `staging` allowed to be public?** SS-03 says no environment is public without a justified
-   opt-out. A team wanting a publicly reachable staging URL is a plausible, reasonable request, and
-   the opt-out already exists — worth confirming that it applies per stack rather than per service.
+3. ~~Is `staging` allowed to be public?~~ **Resolved 2026-08-26: yes, config-keyed.** The justified
+   `publicAccess` opt-out may be exercised per stack — and *must* be keyed on configuration,
+   because one program serves both stacks, so an opt-out written directly into `infra/index.ts`
+   opens production with it. The working pattern, in the team's own edit:
+
+   ```ts
+   const publicJustification = config.get("publicJustification");
+
+   new SecureContainerService("web", {
+     // ...
+     publicAccess:
+       publicJustification === undefined
+         ? undefined
+         : { justification: publicJustification },
+   });
+   ```
+
+   with the key in `Pulumi.staging.yaml` **only**:
+
+   ```yaml
+   demo:publicJustification: "stakeholder preview before launch"
+   ```
+
+   Production stays private because its config never carries the key — the same
+   branch-on-config-never-on-stack-name mechanism as `imageDigest`/`imageTag`, so SS-01 is
+   preserved. The pairwise proof that the opt-out applied on one construction leaves the other
+   private is CR-03's existing test pair (`emits exactly one allUsers invoker binding when
+   public` / `emits no invoker binding at all on the private path`) — referenced rather than
+   duplicated, per the rule that a weaker copy beside a stronger test gets cited as coverage.
+   **The scaffold's default output is unchanged**: nothing public, no new file, no new config key
+   emitted.

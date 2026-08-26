@@ -204,6 +204,11 @@ returns 403 is a property of GCP IAM, established by
 [`environment-provisioning`](SPEC-environment-provisioning.md)'s integration test, and asserted
 there. Re-asserting it here with a mock would be a test of our mock.
 
+Every RP id except RP-04 is named in a passing offline test
+(`npm test --workspace @runway/cli -- -t "RP-"`); RP-04 is runtime-only by nature and stands
+**observed** (2026-08-26, the `first01` audit trail). RP ids get **no rows** in
+[docs/control-mapping.md](docs/control-mapping.md) — decided 2026-08-26; the reason lives there.
+
 ## Boundaries
 
 Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:

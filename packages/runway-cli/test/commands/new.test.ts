@@ -46,7 +46,7 @@ describe("runNew: name validation", () => {
     expect(readdirSync(cwd)).toEqual([]);
   });
 
-  it("rejects a name too long to make a valid project id", () => {
+  it("SS-06: rejects a name too long to make a valid project id", () => {
     // The name becomes <name>-production, and a GCP project id caps at 30.
     // "-production" is 11, so 19 is the ceiling. Valid characters throughout:
     // length alone must be disqualifying.
@@ -63,7 +63,7 @@ describe("runNew: name validation", () => {
     expect(() => runNew(["a".repeat(20)], cwd)).toThrow(/19|project id/i);
   });
 
-  it("rejects a name starting with a digit", () => {
+  it("SS-06: rejects a name starting with a digit", () => {
     // A GCP project id must start with a letter, so "2fa" yields the invalid
     // project id "2fa-staging" — caught here rather than by the GCP API later.
     expect(() => runNew(["2fa"], cwd)).toThrow(UsageError);

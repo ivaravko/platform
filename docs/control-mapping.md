@@ -11,6 +11,15 @@ without a test fails. Each package guards its own prefixes against its own suite
 `packages/environment-provisioning/test/control-mapping.test.ts` for EP. A mapping document that
 has drifted from its suite is worse than no document, because it reads as proof.
 
+**SS and RP ids are deliberately not rows here.** Decided 2026-08-26, during the v1 close-out's
+P2: this mapping documents hardened *resource defaults* and cites the external guidance each rests
+on — the discipline its `Source` column enforces. SS-01–SS-06 and RP-01–RP-06 are module contracts
+of the scaffold and the release path; they have no external standard to cite, and they are already
+id-named in their specs and in the `@runway/cli` suite (`npm test --workspace @runway/cli -- -t
+"SS-"` / `-t "RP-"` each run a non-empty set). Adding rows without sources would dilute the rule
+that makes the existing rows trustworthy. If a benchmark ever covers supply-chain promotion or
+stack hygiene, that is the moment to revisit.
+
 ## On the `Source` column
 
 Per the rule agreed in [SPEC-secure-container-service.md](../SPEC-secure-container-service.md#4-control-mapping-cites-cis-only-where-cis-genuinely-covers-the-control):

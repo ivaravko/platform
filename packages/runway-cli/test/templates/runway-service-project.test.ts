@@ -605,7 +605,7 @@ describe("stack configuration", () => {
   it.each([
     ["staging", "demo-staging"],
     ["production", "demo-production"],
-  ])("%s targets the derived project %s", (env, projectId) => {
+  ])("SS-06: %s targets the derived project %s", (env, projectId) => {
     // Derived, not passed: the scaffold knows the name, so neither a flag nor a
     // config file has to carry an identifier between two commands.
     expect(stackConfig(env)).toContain(`gcp:project: ${projectId}`);
@@ -640,14 +640,33 @@ describe("stack configuration", () => {
 describe("infra program", () => {
   const infra = (): string => read("infra/index.ts");
 
-  it("requires the region rather than defaulting it", () => {
+  it("SS-05: requires the region rather than defaulting it, and bakes in no literal", () => {
     // SPEC-runway-cli forbids baking a region default into generated source,
     // and the default is the worse failure: an unset region deploys silently to
     // Belgium instead of stopping. require() turns a wrong answer into a
     // missing one. gcp:project is already required, so this costs no working
     // configuration -- a fresh scaffold could never preview without config.
     expect(infra()).toContain('gcpConfig.require("region")');
-    expect(infra()).not.toMatch(/europe-west\d/);
+    // The spec's own greppable form: no region, no project path, no credential
+    // shape anywhere in the generated program.
+    expect(infra()).not.toMatch(/europe-west\d|projects\/|AIza|-----BEGIN/);
+  });
+
+  it("SS-03: the program opens nothing to the public", () => {
+    // The generated example never exercises the opt-out. Private-by-default is
+    // CR-01's guarantee at runtime; this asserts the scaffold does not teach
+    // the escape hatch on day one -- an example carrying publicAccess would be
+    // copied precisely because it is the example.
+    expect(infra()).not.toMatch(/publicAccess|allUsers|ServiceIamMember/);
+  });
+
+  it("SS-04: the stack runs precompiled JavaScript, never ts-node", () => {
+    // typescript: false is load-bearing: Pulumi's ts-node cannot load
+    // TypeScript 7 at all, and even where it could, transpiling the @pulumi/gcp
+    // declaration graph was measured at over two minutes without completing.
+    const runtime = read("infra/Pulumi.yaml");
+    expect(runtime).toContain("typescript: false");
+    expect(runtime).toContain("main: lib/index.js");
   });
 
   it("composes all three components", () => {
@@ -692,8 +711,8 @@ describe("infra program", () => {
     expect(infra()).toContain('accountId: "demo-runtime"');
   });
 
-  it("prefers a digest over a tag, without branching on stack name", () => {
-    // SS-01: the program is identical for both stacks. Preferring a digest when
+  it("SS-01: prefers a digest over a tag, without branching on stack name", () => {
+    // The program is identical for both stacks. Preferring a digest when
     // one is configured is a branch on config, not on environment -- production
     // gets a digest because CI sets one, not because the program knows it is
     // production.
