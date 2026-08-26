@@ -25,7 +25,12 @@ const WORKSPACE_GLOB = "packages/*";
  * different bytes under the same number -- and every generated repo pins
  * whatever ships first. 0.1.0 rather than 0.0.0: real, pre-1.0, expect change.
  */
-const PACKAGE_VERSION = "0.1.0";
+// 0.1.1: the scaffold that emits Dockerfile, release.yml and the package
+// job, published-version deps in generated repos, and runway bootstrap's
+// provisioning path. 0.1.0 froze before all of it -- a repo regenerating
+// through the stale published cli was rewritten back to file: links, which
+// is how this bump was found.
+const PACKAGE_VERSION = "0.1.1";
 const REGISTRY =
   "https://europe-west1-npm.pkg.dev/enduring-badge-506610-u9/runway/";
 
