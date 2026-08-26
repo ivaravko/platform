@@ -69,11 +69,14 @@ The tag is the release name; the digest is what deploys.
 1. `v1.4.0` is pushed.
 2. CI resolves **the tagged commit's image** — `<staging registry>/<service>:sha-<commit>`, pushed
    by `build.yml` when that commit landed on `main` — to its digest.
-3. That digest is copied into the production registry, named `v1.4.0` there, and its presence is
+3. The production registry is ensured first — a targeted apply of `SecureArtifactRepository`, the
+   two-phase first apply [service-stacks](SPEC-service-stacks.md#the-first-deploy-of-an-environment-is-two-phases)
+   requires, encoded in the workflow because production's only deployer *is* the workflow. A no-op
+   from the second release on.
+4. The digest is copied into the production registry, named `v1.4.0` there, and its presence is
    verified by digest before anything deploys. Each environment pulls from its own registry, so the
    artifact must exist in production's — promotion is literally the artifact moving.
-4. The digest is set as `imageDigest` on the production stack.
-5. `pulumi up --stack production`.
+5. `imageDigest` is set on the production stack, and `pulumi up` deploys everything else.
 
 Step 2 resolves the commit's image rather than a registry tag named `v1.4.0`, because no such
 registry tag exists before the release — the only way it could is a rebuild at release time, and

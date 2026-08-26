@@ -485,6 +485,45 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
           ].join("\n"),
         },
         {
+          uses: "actions/setup-node@v4",
+          with: { "node-version": NODE_VERSION, cache: "npm" },
+        },
+        {
+          name: "Build the infra program",
+          // Pulumi runs `main: lib/index.js`; only infra needs compiling.
+          run: [
+            `printf '%s:_authToken=%s\\n' '${npmHost}' '\${{ steps.auth.outputs.access_token }}' > "$RUNNER_TEMP/npmrc"`,
+            'npm ci --userconfig "$RUNNER_TEMP/npmrc"',
+            "npm run compile:infra",
+          ].join("\n"),
+        },
+        {
+          name: "Ensure the production registry exists",
+          // The two-phase first apply, encoded here because production's only
+          // deployer is this workflow: a brand-new environment cannot receive
+          // the digest copy before the registry exists, and the registry is
+          // part of the very stack being deployed. Phase one targets it (a
+          // no-op from the second release on); the copy runs; the full apply
+          // follows. `stack init` on the first release ever — nothing else is
+          // permitted to initialise production's stack.
+          env: {
+            DIGEST: "${{ steps.resolve.outputs.digest }}",
+            // Config here holds no secret; stacks initialised with the
+            // default passphrase provider and no passphrase deploy as-is.
+            PULUMI_CONFIG_PASSPHRASE: "",
+          },
+          run: [
+            "curl -fsSL https://get.pulumi.com | sh",
+            'echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"',
+            'export PATH="$HOME/.pulumi/bin:$PATH"',
+            "pulumi login \"${{ vars.RUNWAY_PRODUCTION_STATE_BACKEND }}\"",
+            "cd infra",
+            "pulumi stack select production || pulumi stack init production",
+            'pulumi config set imageDigest "$DIGEST"',
+            "pulumi up --target '**SecureArtifactRepository**' --target-dependents --yes",
+          ].join("\n"),
+        },
+        {
           name: "Promote the artifact into the production registry",
           // Each environment pulls from its own registry, so the digest must
           // exist in production's before Cloud Run is asked to pull it. A
@@ -502,33 +541,12 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
           ].join("\n"),
         },
         {
-          uses: "actions/setup-node@v4",
-          with: { "node-version": NODE_VERSION, cache: "npm" },
-        },
-        {
-          name: "Build the infra program",
-          // Pulumi runs `main: lib/index.js`; only infra needs compiling.
-          run: [
-            `printf '%s:_authToken=%s\\n' '${npmHost}' '\${{ steps.auth.outputs.access_token }}' > "$RUNNER_TEMP/npmrc"`,
-            'npm ci --userconfig "$RUNNER_TEMP/npmrc"',
-            "npm run compile:infra",
-          ].join("\n"),
-        },
-        {
           name: "Deploy the digest",
-          env: {
-            DIGEST: "${{ steps.resolve.outputs.digest }}",
-            // Config here holds no secret; stacks initialised with the
-            // default passphrase provider and no passphrase deploy as-is.
-            PULUMI_CONFIG_PASSPHRASE: "",
-          },
+          env: { PULUMI_CONFIG_PASSPHRASE: "" },
           run: [
-            "curl -fsSL https://get.pulumi.com | sh",
-            'export PATH="$HOME/.pulumi/bin:$PATH"',
             "pulumi login \"${{ vars.RUNWAY_PRODUCTION_STATE_BACKEND }}\"",
             "cd infra",
             "pulumi stack select production",
-            'pulumi config set imageDigest "$DIGEST"',
             "pulumi up --yes",
           ].join("\n"),
         },

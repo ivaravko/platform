@@ -152,10 +152,31 @@ describe("release workflow: promotion (RP-02, RP-03)", () => {
   });
 
   it("deploys the digest and never writes a tag (RP-02)", () => {
-    const deploy = steps[stepIndex("pulumi up")];
-    expect(deploy.run).toContain("pulumi stack select production");
-    expect(deploy.run).toContain("pulumi config set imageDigest");
+    const registry = steps[stepIndex("SecureArtifactRepository")];
+    expect(registry.run).toContain("pulumi config set imageDigest");
+    expect(registry.run).not.toContain("imageTag");
+
+    const deploy = steps[stepIndex("pulumi up --yes")];
     expect(deploy.run).not.toContain("imageTag");
+  });
+
+  it("ensures the production registry exists before the copy — the two-phase first apply", () => {
+    // service-stacks: a brand-new environment's first apply is two-phase,
+    // registry first, then push, then the rest. Production's only deployer
+    // is this workflow, so the workflow encodes the phases: a targeted
+    // registry apply (idempotent from the second release on), then the
+    // digest copy, then everything else.
+    const registry = stepIndex("SecureArtifactRepository");
+    const copy = stepIndex("docker push");
+    const deploy = stepIndex("pulumi up --yes");
+
+    expect(registry).toBeGreaterThanOrEqual(0);
+    expect(registry).toBeLessThan(copy);
+    expect(copy).toBeLessThan(deploy);
+
+    const step = steps[registry];
+    expect(step.run).toContain("--target-dependents");
+    expect(step.run).toMatch(/stack select production \|\| pulumi stack init production/);
   });
 });
 
