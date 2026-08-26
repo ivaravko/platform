@@ -83,6 +83,16 @@ export interface ServiceEnvironmentArgs {
 
   /** Who may deploy here. See `DeployableBy`. */
   readonly deployableBy: DeployableBy;
+
+  /**
+   * Staging only: a federated CI identity that may **publish images**, and
+   * nothing more — `roles/artifactregistry.writer`, scoped to the one
+   * repository's `refs/heads/main`. It holds no deploy verb, so "staging is
+   * deployed by people" survives it, and the deploy permission set is what
+   * proves writer is not deploy-capable. Production refuses this: its
+   * deployer already publishes.
+   */
+  readonly ciImagePublisher?: { readonly repository: string };
 }
 
 /**
@@ -129,6 +139,12 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
   /** Production's federated identity (EP-02, EP-03). Absent for staging. */
   public readonly federation?: WorkloadIdentity;
 
+  /** Staging's image-publisher federation, when configured. Never a deployer. */
+  public readonly imagePublisher?: WorkloadIdentity;
+
+  /** The publisher's one grant: registry writer, and nothing else. */
+  public readonly imagePublisherGrant?: gcp.projects.IAMMember;
+
   constructor(
     name: string,
     args: ServiceEnvironmentArgs,
@@ -143,6 +159,13 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
           `deployable by people would leave EP-01 unenforced, and a developer ` +
           `could deploy to production by hand. Production deploys only by the ` +
           `federated CI identity.`,
+      );
+    }
+    if (args.ciImagePublisher !== undefined && args.environment === "production") {
+      throw new Error(
+        `ServiceEnvironment: production takes no separate image publisher — ` +
+          `its deployer already publishes, and a second identity would be a ` +
+          `second thing to audit for no capability gained.`,
       );
     }
     if ("ci" in args.deployableBy && args.environment === "staging") {
@@ -272,12 +295,38 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
             { parent: this },
           );
 
+    if (args.ciImagePublisher !== undefined) {
+      this.imagePublisher = new WorkloadIdentity(
+        `${name}-publisher`,
+        {
+          service: args.service,
+          project,
+          repository: args.ciImagePublisher.repository,
+          // Images are built from main and only main; releases are the
+          // production deployer's refs, not this identity's.
+          refs: ["refs/heads/main"],
+        },
+        { parent: this },
+      );
+      this.imagePublisherGrant = new gcp.projects.IAMMember(
+        `${name}-publisher-writer`,
+        {
+          project,
+          role: "roles/artifactregistry.writer",
+          member: pulumi.interpolate`serviceAccount:${this.imagePublisher.deployerEmail}`,
+        },
+        { parent: this },
+      );
+    }
+
     this.registerOutputs({
       project: this.project,
       stateBucket: this.stateBucket,
       deployGrants: this.deployGrants,
       stateAccessGrant: this.stateAccessGrant,
       federation: this.federation,
+      imagePublisher: this.imagePublisher,
+      imagePublisherGrant: this.imagePublisherGrant,
     });
   }
 }

@@ -234,7 +234,41 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
           push: { branches: ["main"] },
           workflowDispatch: {},
         },
+        // contents: write is projen's own default here (the self-mutation
+        // patch); id-token is what lets the pre-build steps mint a federated
+        // credential for `npm ci` -- @runway/* lives in an authenticated
+        // registry, and CI holds no stored secret.
+        permissions: {
+          contents: github.workflows.JobPermission.WRITE,
+          idToken: github.workflows.JobPermission.WRITE,
+        },
       },
+
+      // Registry auth BEFORE the install step -- preBuildSteps runs after it,
+      // which authenticates nothing. Bootstrap steps are prepended to the
+      // workflow's setup, so `npm ci` runs with the token in ~/.npmrc. Gated
+      // on the same variables as the package job: skipped until bootstrap
+      // prints them, and no stored secret at any point.
+      workflowBootstrapSteps: [
+        {
+          id: "registry_auth",
+          name: "Authenticate to Google Cloud",
+          if: "vars.RUNWAY_WIF_PROVIDER != ''",
+          uses: "google-github-actions/auth@v2",
+          with: {
+            workload_identity_provider: "${{ vars.RUNWAY_WIF_PROVIDER }}",
+            service_account: "${{ vars.RUNWAY_CI_SERVICE_ACCOUNT }}",
+            token_format: "access_token",
+          },
+        },
+        {
+          name: "Configure npm for Artifact Registry",
+          if: "vars.RUNWAY_WIF_PROVIDER != ''",
+          run:
+            `printf '%s:_authToken=%s\\n' '${RUNWAY_REGISTRY.replace(/^https:/, "")}' ` +
+            `'\${{ steps.registry_auth.outputs.access_token }}' >> "$HOME/.npmrc"`,
+        },
+      ],
 
       licensed: false,
       sampleCode: false,

@@ -288,11 +288,23 @@ const provision = async (options: ProvisionOptions): Promise<void> => {
             ? {}
             : { group: options.developersGroup },
       },
+      // With a repository named, staging gets its CI image publisher: a
+      // federated identity holding registry writer and nothing else, so the
+      // repo's CI can install and push images before production exists.
+      ...(options.repository === undefined
+        ? {}
+        : { ciImagePublisher: { repository: options.repository } }),
     });
 
     const outputs: Record<string, unknown> = {
       stagingProject: staging.project,
       stagingStateBucket: staging.stateBucket.name,
+      ...(staging.imagePublisher === undefined
+        ? {}
+        : {
+            stagingWifProvider: staging.imagePublisher.provider.name,
+            stagingPublisherEmail: staging.imagePublisher.deployerEmail,
+          }),
     };
 
     if (productionPolicy !== undefined && options.repository !== undefined) {
@@ -361,6 +373,16 @@ const provision = async (options: ProvisionOptions): Promise<void> => {
       `RUNWAY_WIF_PROVIDER=${value("wifProvider")}/providers/github`,
       `RUNWAY_CI_SERVICE_ACCOUNT=${value("deployerEmail")}`,
       `RUNWAY_PRODUCTION_STATE_BACKEND=gs://${value("productionStateBucket")}`,
+    );
+  } else if (value("stagingWifProvider") !== "") {
+    lines.push(
+      "",
+      "# Repository variables for the service's workflows (Settings > Variables).",
+      "# Staging's image publisher: CI installs and pushes images with these.",
+      "# RUNWAY_PRODUCTION_STATE_BACKEND stays unset until production exists,",
+      "# so release.yml keeps refusing -- correctly.",
+      `RUNWAY_WIF_PROVIDER=${value("stagingWifProvider")}/providers/github`,
+      `RUNWAY_CI_SERVICE_ACCOUNT=${value("stagingPublisherEmail")}`,
     );
   }
   lines.push("", `Staging state backend: gs://${value("stagingStateBucket")}`, "");

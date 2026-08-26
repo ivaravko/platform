@@ -32,6 +32,7 @@ interface Job {
     readonly run?: string;
     readonly uses?: string;
   }[];
+  // (uses/if/run cover both the package job and the build job's pre-steps)
 }
 
 let outdir: string;
@@ -84,6 +85,23 @@ describe("workflow contract", () => {
     // contents: write it would fail on all of them.
     expect(selfMutation.if).toContain("github.event.pull_request.head.repo.full_name");
     expect(selfMutation.permissions?.contents).toBe("write");
+  });
+});
+
+describe("workflow contract: the build job authenticates to the registry", () => {
+  it("mints a federated credential before install, gated on the same variables", () => {
+    // @runway/* lives in an authenticated registry. Until bootstrap prints
+    // the variables the steps are skipped; once set, plain npm ci works --
+    // no stored secret at any point.
+    const build = jobs.build;
+    expect(build.permissions?.["id-token"]).toBe("write");
+
+    const steps = build.steps ?? [];
+    const auth = steps.findIndex((s) => (s.uses ?? "").startsWith("google-github-actions/auth@"));
+    const install = steps.findIndex((s) => /npm (ci|install)/.test(s.run ?? ""));
+    expect(auth).toBeGreaterThanOrEqual(0);
+    expect(auth).toBeLessThan(install);
+    expect(steps[auth].if).toContain("vars.RUNWAY_WIF_PROVIDER");
   });
 });
 

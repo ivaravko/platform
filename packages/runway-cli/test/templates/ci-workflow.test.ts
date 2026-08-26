@@ -77,9 +77,13 @@ describe("ci workflow", () => {
     const steps = (workflow.jobs.build.steps ?? []).map(describeStep);
 
     expect(steps[0]).toContain("actions/checkout");
-    expect(steps[1]).toContain("actions/setup-node");
-    expect(steps[2]).toContain("npm");
-    expect(steps[3]).toContain("projen build");
+    // Relative order, not fixed indices: the registry-auth bootstrap steps
+    // sit between checkout and install.
+    const at = (needle: RegExp): number => steps.findIndex((s) => needle.test(s));
+    expect(at(/actions\/setup-node/)).toBeGreaterThan(0);
+    // Auth precedes install, or the token authenticates nothing.
+    expect(at(/google-github-actions\/auth/)).toBeLessThan(at(/npm (ci|install)/));
+    expect(at(/npm (ci|install)/)).toBeLessThan(at(/projen build/));
   });
 
   it("detects stale projen output rather than ignoring it", () => {

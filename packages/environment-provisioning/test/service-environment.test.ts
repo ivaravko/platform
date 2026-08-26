@@ -323,3 +323,66 @@ describe("staging without a developers group — EP-04 deferred, never softened"
     expect(created.filter((r) => r.type === BUCKET_IAM_TYPE)).toHaveLength(0);
   });
 });
+
+const published = (name: string): ServiceEnvironment =>
+    new ServiceEnvironment(name, {
+      service: "checkout",
+      environment: "staging",
+      location: "europe-west1",
+      deployableBy: { humans: { group: "developers@acme.com" } },
+      ciImagePublisher: { repository: "acme/checkout" },
+    });
+
+describe("staging CI image publisher — federation without a deploy role", () => {
+  it("federates in the staging project, scoped to main, and grants writer only", async () => {
+    const env = published("pub");
+    await resolve(env.project);
+    const created = await resourcesFor("pub");
+
+    const pools = created.filter(
+      (r) => r.type === "gcp:iam/workloadIdentityPool:WorkloadIdentityPool",
+    );
+    expect(pools).toHaveLength(1);
+    expect(pools[0].props.project).toBe("checkout-staging");
+
+    // The publisher's grants, enumerated: registry writer and nothing else.
+    // No run.* role — "staging is deployed by people" survives this identity,
+    // and the deploy permission set confirms writer is not deploy-capable.
+    const DEPLOYER =
+      "serviceAccount:checkout-deployer@checkout-staging.iam.gserviceaccount.com";
+    const saGrants = created
+      .filter((r) => r.type === PROJECT_IAM_TYPE && r.props.member === DEPLOYER)
+      .map((r) => r.props.role);
+    expect(saGrants).toEqual(["roles/artifactregistry.writer"]);
+  });
+
+  it("admits main pushes and nothing else", async () => {
+    const env = published("pub-refs");
+    expect(env.imagePublisher).toBeDefined();
+    const condition = await resolve(env.imagePublisher!.provider.attributeCondition);
+
+    const admits = (ref: string): boolean =>
+      attributeConditionAdmits(condition ?? "", { repository: "acme/checkout", ref });
+    expect(admits("refs/heads/main")).toBe(true);
+    expect(admits("refs/tags/v1.0.0")).toBe(false);
+    expect(admits("refs/heads/feature")).toBe(false);
+  });
+
+  it("is refused on production, whose deployer already publishes", () => {
+    expect(() =>
+      new ServiceEnvironment("pub-prod", {
+        service: "checkout",
+        environment: "production",
+        location: "europe-west1",
+        deployableBy: {
+          ci: {
+            repository: "acme/checkout",
+            refs: ["refs/tags/v*"],
+            existingPolicy: cleanAdoptedPolicy,
+          },
+        },
+        ciImagePublisher: { repository: "acme/checkout" },
+      }),
+    ).toThrow(/publisher/i);
+  });
+});
