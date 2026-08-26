@@ -370,7 +370,8 @@ const provision = async (options: ProvisionOptions): Promise<void> => {
     lines.push(
       "",
       "# Repository variables for the service's workflows (Settings > Variables):",
-      `RUNWAY_WIF_PROVIDER=${value("wifProvider")}/providers/github`,
+      // provider.name is already the full provider resource path.
+      `RUNWAY_WIF_PROVIDER=${value("wifProvider")}`,
       `RUNWAY_CI_SERVICE_ACCOUNT=${value("deployerEmail")}`,
       `RUNWAY_PRODUCTION_STATE_BACKEND=gs://${value("productionStateBucket")}`,
     );
@@ -381,7 +382,7 @@ const provision = async (options: ProvisionOptions): Promise<void> => {
       "# Staging's image publisher: CI installs and pushes images with these.",
       "# RUNWAY_PRODUCTION_STATE_BACKEND stays unset until production exists,",
       "# so release.yml keeps refusing -- correctly.",
-      `RUNWAY_WIF_PROVIDER=${value("stagingWifProvider")}/providers/github`,
+      `RUNWAY_WIF_PROVIDER=${value("stagingWifProvider")}`,
       `RUNWAY_CI_SERVICE_ACCOUNT=${value("stagingPublisherEmail")}`,
     );
   }
