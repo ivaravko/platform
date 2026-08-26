@@ -43,12 +43,26 @@ pushing its images by federation, and deployed to staging.
 
 ## Provision its environments
 
-The projects pre-exist (the CLI never creates one); bootstrap adopts them and builds the identity
-boundary — state buckets, deploy IAM, and the CI federation:
+Two things are hand-made before bootstrap can run — the CLI adopts, it never creates:
+
+```bash
+# Once per organisation: the bucket holding the bootstrap stacks' own state.
+gcloud storage buckets create gs://<org>-runway-bootstrap-state \
+  --project <platform-project> --location europe-west1 --uniform-bucket-level-access
+gcloud storage buckets update gs://<org>-runway-bootstrap-state --versioning
+
+# Once per service: the projects, with billing attached. Ids derive from the
+# service name — the flags below only confirm them.
+gcloud projects create <name>-staging     # and <name>-production, when it is ready
+```
+
+Bootstrap then adopts the projects and builds the identity boundary — state buckets, deploy IAM,
+and the CI federation:
 
 ```bash
 runway bootstrap <name> --staging-project <name>-staging \
   --github-repo <org>/<repo> --region europe-west1 \
+  --developers-group <team>@<org> \
   --bootstrap-state gs://<org>-runway-bootstrap-state         # previews
 # … same command with --yes                                    # applies
 
