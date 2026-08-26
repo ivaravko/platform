@@ -460,6 +460,12 @@ it writes nothing and grants nothing.
   their live definitions, exactly as a real bootstrap would — is refused by `auditProductionPolicy`
   with every human deploy-capable binding named. The account running the tier holds `roles/owner`
   there, so a compliant verdict would have meant the control was not working.
+- **`runway bootstrap` provisions for real — proven to the preview gate.** The wet path (added
+  2026-08-26) runs the ServiceEnvironment program through the Automation API against the named
+  bootstrap backend, previewing by default and applying only under `--yes`. Exercised through the
+  shipped binary against a local backend: three creates planned by the real provider, EP-07
+  reported, the apply correctly withheld. No `--yes` run has happened anywhere — no projects exist
+  to run it against.
 - **The staging composition is accepted by the real provider.** `ServiceEnvironment` staging
   previews as creates and nothing else: the versioned, public-access-prevented state bucket, the
   group's `roles/run.developer` grant, and bucket-scoped state access — the same shapes the offline
