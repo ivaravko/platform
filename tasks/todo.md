@@ -184,24 +184,28 @@ The claim the module exists to make: **a developer holding every credential they
 possess still cannot deploy to production.** Until this runs, that is a design, not a fact.
 
 **Acceptance criteria**
-- [ ] EP-06's refusal demonstrated against a **real** project whose IAM grants a human deploy role
-- [ ] The staging path bootstraps successfully and the grants are read back from Google, not
-      inferred from the plan
-- [ ] A human principal's deploy attempt against production is **denied by GCP**, and the denial is
-      observed rather than assumed
+- [x] EP-06's refusal demonstrated against a **real** project whose IAM grants a human deploy role
+- [ ] ~~The staging path bootstraps successfully and the grants are read back from Google~~ —
+      **descoped by OQ2 (preview-only)**: the staging composition was *previewed* against the real
+      provider, creates-only, inputs asserted; no grant was written to read back
+- [ ] ~~A human principal's deploy attempt against production is **denied by GCP**~~ — **descoped
+      by OQ1/OQ2**: no clean production target and no write authorization; recorded as unverified
+      in the spec's Verification status, not assumed
 
 **Stop conditions**
-- [ ] **Gated on [plan OQ2](plan.md#open-questions).** This writes IAM to a real project. Do not run
+- [x] **Gated on [plan OQ2](plan.md#open-questions).** This writes IAM to a real project. Do not run
       it on unstated authorization
-- [ ] If no project can serve as a clean production target ([plan OQ1](plan.md#open-questions)),
+- [x] If no project can serve as a clean production target ([plan OQ1](plan.md#open-questions)),
       **stop and report** — verify the refusal path and say plainly that the acceptance path is
       unverified. Do not weaken EP-06 to manufacture a passing test
 
 **Verification**
-- [ ] Every grant made is recorded so it can be revoked, and revocation is verified afterwards
-- [ ] Project state checked per resource type before and after
-- [ ] Result recorded in [SPEC-environment-provisioning.md](../SPEC-environment-provisioning.md),
-      including anything left unverified
+- [x] Every grant made is recorded so it can be revoked — vacuously: zero grants were made, per
+      OQ2
+- [x] Project state checked per resource type before and after — the preview plan contained
+      creates and nothing else, so nothing of ours pre-existed or was left
+- [x] Result recorded in [SPEC-environment-provisioning.md](../SPEC-environment-provisioning.md),
+      including anything left unverified — see its Verification status section
 
 **Dependencies:** E6
 **Files:** `test-integration/`, `SPEC-environment-provisioning.md`

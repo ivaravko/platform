@@ -443,6 +443,31 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 14. Adding `--production-project` later provisions production and leaves staging's IAM bindings and
     state bucket unchanged — verified by comparing before and after, not by inspection.
 
+## Verification status
+
+Recorded 2026-08-26, after E7 ran under the narrowed authorization
+[plan OQ1/OQ2](tasks/plan.md#open-questions) granted: the integration tier reads IAM and previews;
+it writes nothing and grants nothing.
+
+**Verified against real GCP:**
+- **EP-06 refuses a real project.** The sandbox's live IAM policy — custom roles resolved from
+  their live definitions, exactly as a real bootstrap would — is refused by `auditProductionPolicy`
+  with every human deploy-capable binding named. The account running the tier holds `roles/owner`
+  there, so a compliant verdict would have meant the control was not working.
+- **The staging composition is accepted by the real provider.** `ServiceEnvironment` staging
+  previews as creates and nothing else: the versioned, public-access-prevented state bucket, the
+  group's `roles/run.developer` grant, and bucket-scoped state access — the same shapes the offline
+  mocks assert, so the two tiers cannot quietly diverge.
+
+**Deliberately unverified, and by whose decision:**
+- **The acceptance path.** No clean production project exists (OQ1: refusal-only), so no adoption
+  has succeeded end to end, no WIF pool exists in reality, and bootstrap has never written a grant
+  (OQ2: preview-only).
+- **The observed 403 — this module's central claim.** *A developer holding every credential they
+  legitimately possess still cannot deploy to production* remains a design, not a fact, until a
+  clean production target exists and writes are authorized. Every mocked binding assertion above
+  proves what we would *emit*, never what Google *enforces*.
+
 ## Open Questions
 
 1. ~~Does `runway bootstrap` create projects, or adopt existing ones?~~ **Resolved: adopt.** See

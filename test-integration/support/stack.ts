@@ -51,6 +51,14 @@ export interface FixtureStackOptions {
 
   /** Container image. Defaults to Google's always-available sample. */
   readonly image?: string;
+
+  /**
+   * Extra `<project>:<key>` config for fixtures whose inputs the standard
+   * set does not cover — the staging-environment fixture's service name and
+   * developers group. Applied after the defaults, so a fixture may also
+   * override one.
+   */
+  readonly config?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -129,6 +137,12 @@ export const withFixtureStack = async <T>(
       [`${project}:location`]: { value: SANDBOX_REGION },
       [`${project}:image`]: { value: options.image ?? SAMPLE_IMAGE },
       [`${project}:accountId`]: { value: fixtureAccountId() },
+      ...Object.fromEntries(
+        Object.entries(options.config ?? {}).map(([key, value]) => [
+          `${project}:${key}`,
+          { value },
+        ]),
+      ),
     });
 
     return await body(stack);

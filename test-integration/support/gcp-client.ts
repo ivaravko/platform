@@ -136,3 +136,64 @@ export const listServiceAccountEmails = async (): Promise<string[]> => {
     )
     .filter((email): email is string => typeof email === "string");
 };
+
+const CRM_API = "https://cloudresourcemanager.googleapis.com/v1";
+
+/**
+ * POSTs an API path with an empty body — `getIamPolicy` is a POST in the
+ * Resource Manager API, oddly but officially. Same failure stance as `get`:
+ * a non-200 throws with the body attached, because "the project has no
+ * policy" and "the request was rejected" must never be the same answer.
+ */
+const post = async (path: string, base: string): Promise<unknown> => {
+  assertSandbox();
+
+  const client = await auth.getClient();
+  const token = await client.getAccessToken();
+  const response = await fetch(`${base}/${path}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token.token ?? ""}`,
+      "content-type": "application/json",
+    },
+    body: "{}",
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `POST ${path} returned ${response.status}: ${await response.text()}`,
+    );
+  }
+
+  return await response.json();
+};
+
+/**
+ * The sandbox project's own IAM policy, exactly as Google reports it.
+ *
+ * This is EP-06's raw material: the live bindings, unnormalised, so the audit
+ * judges what a real adoption would judge rather than a fixture's idea of it.
+ */
+export const getProjectIamPolicy = async (): Promise<IamPolicy> => {
+  const path = `projects/${SANDBOX_PROJECT_ID}:getIamPolicy`;
+  const policy = asObject(await post(path, CRM_API), path);
+  const bindings = policy.bindings;
+  return { bindings: Array.isArray(bindings) ? bindings : undefined };
+};
+
+/**
+ * A custom role's granted permissions, from its live definition.
+ *
+ * The audit refuses to guess about a custom role a human holds; this is how
+ * the tier answers instead of guessing. Predefined roles never come through
+ * here — the audit resolves those from its stated table.
+ */
+export const getCustomRolePermissions = async (
+  role: string,
+): Promise<readonly string[]> => {
+  const definition = asObject(await get(role, IAM_API), role);
+  const permissions = definition.includedPermissions;
+  return Array.isArray(permissions)
+    ? permissions.filter((p): p is string => typeof p === "string")
+    : [];
+};
