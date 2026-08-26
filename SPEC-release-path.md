@@ -39,6 +39,10 @@ file to the scaffold is [ask-first](SPEC-runway-cli.md#boundaries).
 Recorded now rather than discovered at implementation: **this module is blocked, and the blocker is
 one file and one workflow job in a different module.**
 
+**Since closed.** The scaffold now emits both — approved as ask-first, verified end to end against
+the published registry. See [open question 1](#open-questions) for what was built. This module is no
+longer blocked.
+
 ## The two routes
 
 ```
@@ -204,13 +208,15 @@ Inherits [SPEC.md](SPEC.md#boundaries). Module-specific:
 
 ## Open Questions
 
-1. **What publishes the image?** Still open, and still the blocker. A `Dockerfile` plus a
-   build-and-push job in `build.yml`, both additions to `runway-cli`'s scaffold output and therefore
-   ask-first. The Dockerfile now has two build steps to run — `vite build` for the client and `tsc`
-   for the server — since the generated service became a SPA.
+1. ~~What publishes the image?~~ **Resolved: the scaffold does.** A two-stage `Dockerfile` — both
+   build steps in the builder, no `node_modules` in the ship stage — and a `package` job in
+   `build.yml` that pushes `sha-<commit>` images on `main`, authenticated by federation. The job is
+   inert until `runway bootstrap` exists and sets the two repository variables it names —
+   `RUNWAY_WIF_PROVIDER` and `RUNWAY_CI_SERVICE_ACCOUNT` — which is now a contract bootstrap must
+   honour.
 
-   **The ordering half of this question is resolved:** a new environment's first apply is two-phase,
-   registry first, then push, then the rest. See
+   The ordering half was resolved earlier: a new environment's first apply is two-phase, registry
+   first, then push, then the rest. See
    [service-stacks](SPEC-service-stacks.md#the-first-deploy-of-an-environment-is-two-phases).
 2. ~~Does production roll back, and how?~~ **Resolved: an explicit path.** `release.yml` gains a
    `workflow_dispatch` trigger, dispatched on the ref of the tag to return to. See
