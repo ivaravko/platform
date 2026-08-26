@@ -35,6 +35,10 @@ runway doctor      # what this machine is missing, before npm tells you cryptica
 project ids. `.projenrc.ts` is the only generated file meant to be hand-edited; `npx projen`
 regenerates the rest.
 
+A complete service produced by this flow, end to end:
+[ivaravko/first01](https://github.com/ivaravko/first01) — scaffolded, provisioned, CI building and
+pushing its images by federation, and deployed to staging.
+
 ## Provision its environments
 
 The projects pre-exist (the CLI never creates one); bootstrap adopts them and builds the identity
