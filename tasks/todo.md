@@ -47,19 +47,19 @@ A read-only audit over an existing IAM policy. **It refuses and never repairs**,
 resolved open question.
 
 **Acceptance criteria**
-- [ ] Given an IAM policy, reports every binding granting a deploy-capable role to a **human**
+- [x] Given an IAM policy, reports every binding granting a deploy-capable role to a **human**
       principal — `user:`, and `group:` where the group is not the CI identity
-- [ ] `serviceAccount:` principals are not human; the CI deployer is expected to hold this role
-- [ ] Refuses with the offending bindings named. **No `--fix`, no `--force`** — the spec is explicit
+- [x] `serviceAccount:` principals are not human; the CI deployer is expected to hold this role
+- [x] Refuses with the offending bindings named. **No `--fix`, no `--force`** — the spec is explicit
       that remediation is the team's, so the module never mutates what it is auditing
-- [ ] The message says what to remove and where, because a refusal a team cannot act on gets bypassed
+- [x] The message says what to remove and where, because a refusal a team cannot act on gets bypassed
 
 **Verification**
-- [ ] Fixture-driven over policies containing: a user binding, a group binding, a service-account
+- [x] Fixture-driven over policies containing: a user binding, a group binding, a service-account
       binding, a custom deploy-capable role, and a clean policy
-- [ ] **Failure-injected**: a clean policy passes, then one human binding is added and the same
+- [x] **Failure-injected**: a clean policy passes, then one human binding is added and the same
       check fires — absence proven against injected presence, not asserted alone
-- [ ] Nothing in the module can write IAM: asserted structurally, not by review
+- [x] Nothing in the module can write IAM: asserted structurally, not by review
 
 **Dependencies:** E1
 **Files:** `packages/environment-provisioning/src/audit.ts`, `test/audit.test.ts`,
