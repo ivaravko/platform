@@ -98,18 +98,18 @@ The safe half first. One adopted project, its IAM, its state prefix.
 the spec's resolved question.
 
 **Acceptance criteria**
-- [ ] Creates a per-service pool and provider; **no service account key is ever created**, and the
+- [x] Creates a per-service pool and provider; **no service account key is ever created**, and the
       component exposes no way to ask for one — the same guarantee as SA-01
-- [ ] The provider's attribute condition is scoped to **one repository and one ref**, not to the
+- [x] The provider's attribute condition is scoped to **one repository and one ref**, not to the
       GitHub issuer at large
-- [ ] The binding names the CI deployer service account only
+- [x] The binding names the CI deployer service account only
 
 **Verification**
-- [ ] **Failure-injected, both axes**: the condition rejects a wrong repository *and* a wrong ref.
+- [x] **Failure-injected, both axes**: the condition rejects a wrong repository *and* a wrong ref.
       Asserting that a condition string merely exists would pass for a condition matching everything
-- [ ] A policy rule rejects a raw `gcp.serviceaccount.Key` anywhere in a bootstrap stack, with a test
+- [x] A policy rule rejects a raw `gcp.serviceaccount.Key` anywhere in a bootstrap stack, with a test
       proving it fires
-- [ ] `npm test -- -t "EP-03"` passes offline
+- [x] `npm test -- -t "EP-03"` passes offline
 
 **Dependencies:** E3
 **Files:** `packages/environment-provisioning/src/workload-identity.ts`,
