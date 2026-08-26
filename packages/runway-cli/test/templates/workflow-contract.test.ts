@@ -24,7 +24,14 @@ import { withLocalPackages } from "../support/local-links";
 
 interface Job {
   readonly if?: string;
+  readonly needs?: string[];
+  readonly env?: Record<string, string>;
   readonly permissions?: Record<string, string>;
+  readonly steps?: readonly {
+    readonly if?: string;
+    readonly run?: string;
+    readonly uses?: string;
+  }[];
 }
 
 let outdir: string;
@@ -80,6 +87,52 @@ describe("workflow contract", () => {
   });
 });
 
+describe("workflow contract: the package job", () => {
+  // The build-and-push job release-path is blocked on. It ships before
+  // `environment-provisioning` exists, so it must be inert — skipped, not
+  // failing — until `runway bootstrap` creates the federation it
+  // authenticates with and the team sets the repository variables it names.
+
+  it("exists, runs after build, and is inert until bootstrap sets the variables", () => {
+    const pkg = jobs.package;
+
+    expect(pkg).toBeDefined();
+    expect(pkg.needs).toContain("build");
+    expect(pkg.if).toContain("vars.RUNWAY_WIF_PROVIDER");
+  });
+
+  it("authenticates by federation: an identity token, not a stored secret", () => {
+    expect(jobs.package.permissions?.["id-token"]).toBe("write");
+    expect(jobs.package.permissions?.contents).toBe("read");
+  });
+
+  it("skips fork pull requests, which cannot mint an identity token", () => {
+    expect(jobs.package.if).toContain("github.event.pull_request.head.repo.full_name");
+  });
+
+  it("builds the image the infra program expects, tagged by commit", () => {
+    // The same derivation rule as everywhere else: project ids come from the
+    // service name. The image path is what `SecureArtifactRepository` in the
+    // staging stack exposes as its prefix, plus the service name.
+    expect(jobs.package.env?.IMAGE).toBe(
+      "europe-west1-docker.pkg.dev/demo-staging/demo/demo",
+    );
+
+    const runs = (jobs.package.steps ?? []).map((step) => step.run ?? "");
+    expect(runs.some((run) => run.includes("$IMAGE:sha-$GITHUB_SHA"))).toBe(true);
+  });
+
+  it("pushes only from a push to main, never from a pull request", () => {
+    const push = (jobs.package.steps ?? []).find((step) =>
+      (step.run ?? "").includes("docker push"),
+    );
+
+    expect(push).toBeDefined();
+    expect(push?.if).toContain("github.event_name == 'push'");
+    expect(push?.if).toContain("refs/heads/main");
+  });
+});
+
 describe("workflow contract: the README carries the caveat", () => {
   it("names PROJEN_GITHUB_TOKEN and says what breaks without it", () => {
     expect(readme).toContain("PROJEN_GITHUB_TOKEN");
@@ -87,6 +140,14 @@ describe("workflow contract: the README carries the caveat", () => {
 
   it("warns that self-mutation is skipped on forks", () => {
     expect(readme).toMatch(/fork/i);
+  });
+
+  it("names the repository variables the package job waits on", () => {
+    // The forward contract with `runway bootstrap`: until these are set the
+    // job is skipped, and a team reading the README learns why — and what to
+    // set once bootstrap exists.
+    expect(readme).toContain("RUNWAY_WIF_PROVIDER");
+    expect(readme).toContain("RUNWAY_CI_SERVICE_ACCOUNT");
   });
 });
 

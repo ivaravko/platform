@@ -59,6 +59,9 @@ afterAll(() => {
 describe("scaffold file tree", () => {
   it("emits exactly the expected files and nothing else", () => {
     expect(tree).toEqual([
+      // Keeps the laptop's node_modules and stale build output from leaking
+      // into the image the Dockerfile builds.
+      ".dockerignore",
       ".gitattributes",
       // The only file projen's GitHub integration is allowed to add; the
       // release, upgrade, PR-lint, mergify and PR-template defaults are off.
@@ -71,6 +74,9 @@ describe("scaffold file tree", () => {
       ".projen/files.json",
       ".projen/tasks.json",
       ".projenrc.ts",
+      // The deployable artifact release-path promotes; two stages, and the
+      // ship stage carries no node_modules at all.
+      "Dockerfile",
       "README.md",
       "index.html",
       // The load-bearing artifact: a worked example composing all three
@@ -432,6 +438,48 @@ describe("scaffold toolchain", () => {
       dependencies?: Record<string, string>;
     };
     expect(Object.keys(pkg.dependencies ?? {})).toContain("@runway/gcp-components");
+  });
+});
+
+describe("container image", () => {
+  // The artifact release-path promotes. Until this existed nothing built an
+  // image at all — the registry component created a repository nothing wrote
+  // to, which was recorded as the module's blocker.
+
+  it("emits a two-stage Dockerfile whose ship stage installs nothing", () => {
+    const dockerfile = read("Dockerfile");
+    const stages = dockerfile.split(/^FROM /m).slice(1);
+
+    expect(stages).toHaveLength(2);
+    // The generated server imports only Node builtins and the client is
+    // bundled by vite, so the shipped image carries no node_modules — there
+    // is nothing to install, and therefore no registry credential to need.
+    expect(stages[1]).not.toMatch(/npm|node_modules/);
+  });
+
+  it("mounts the registry credential as a build secret, never a layer", () => {
+    const dockerfile = read("Dockerfile");
+
+    expect(dockerfile).toContain("--mount=type=secret");
+    expect(dockerfile).not.toMatch(/_authToken|ya29\./);
+  });
+
+  it("runs the compiled server as the container command", () => {
+    expect(read("Dockerfile")).toContain('CMD ["node", "lib/server/index.js"]');
+  });
+
+  it("keeps host artifacts out of the build context", () => {
+    // Without this, COPY . . drags in the developer's node_modules and stale
+    // lib/ and dist/ — the image would quietly ship whatever the laptop last
+    // built instead of what the builder stage compiles.
+    const dockerignore = read(".dockerignore");
+    for (const entry of ["node_modules", "lib", "dist"]) {
+      expect(dockerignore).toContain(entry);
+    }
+  });
+
+  it("documents the local build, credential included", () => {
+    expect(read("README.md")).toContain("docker build --secret");
   });
 });
 
