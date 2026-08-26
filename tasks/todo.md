@@ -21,19 +21,19 @@ What counts as deploy-capable. EP-01, EP-02 and EP-06 all turn on this one answe
 wrong makes three controls wrong in the same direction — silently permissive.
 
 **Acceptance criteria**
-- [ ] Deploy-capability is decided by **Cloud Run deploy permissions matched by verb**, per the
+- [x] Deploy-capability is decided by **Cloud Run deploy permissions matched by verb**, per the
       spec's resolution — not by role name. A custom role granting `run.services.create` is
       deploy-capable however it is named
-- [ ] Predefined roles are resolved to their permissions, and the set is stated explicitly rather
+- [x] Predefined roles are resolved to their permissions, and the set is stated explicitly rather
       than inferred at runtime from an API that may be unavailable
-- [ ] Exported from the package's `src/index.ts`
+- [x] Exported from the package's `src/index.ts`
 
 **Verification**
-- [ ] Table-driven over: `roles/run.admin`, `roles/run.developer`, `roles/owner`, `roles/editor`,
+- [x] Table-driven over: `roles/run.admin`, `roles/run.developer`, `roles/owner`, `roles/editor`,
       a custom role with `run.services.update`, and a genuinely harmless role
-- [ ] **Failure-injected**: a role that merely *contains* "run" but grants no deploy permission is
+- [x] **Failure-injected**: a role that merely *contains* "run" but grants no deploy permission is
       not deploy-capable — the false-positive direction, which is how a control gets disabled
-- [ ] `npm test --workspace @runway/environment-provisioning -- -t "EP-"` passes, offline
+- [x] `npm test --workspace @runway/environment-provisioning -- -t "EP-"` passes, offline
 
 **Dependencies:** None
 **Files:** `packages/environment-provisioning/src/roles.ts`, `src/index.ts`, `test/roles.test.ts`,
