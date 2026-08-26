@@ -17,12 +17,12 @@ const POOL_TYPE = "gcp:iam/workloadIdentityPool:WorkloadIdentityPool";
 const PROVIDER_TYPE = "gcp:iam/workloadIdentityPoolProvider:WorkloadIdentityPoolProvider";
 const SA_IAM_TYPE = "gcp:serviceaccount/iAMMember:IAMMember";
 
-const identity = (name: string, ref = "refs/heads/main"): WorkloadIdentity =>
+const identity = (name: string, refs: readonly string[] = ["refs/heads/main"]): WorkloadIdentity =>
   new WorkloadIdentity(name, {
     service: "checkout",
     project: "checkout-production",
     repository: "acme/checkout",
-    ref,
+    refs,
   });
 
 describe("EP-03: CI authenticates by federation, and no key is ever created", () => {
@@ -117,7 +117,7 @@ describe("the attribute condition is one repository and one ref, which EP-02 tur
 
   it("a tag pattern admits the tags it names, and nothing else", async () => {
     const condition = await resolve(
-      identity("cond-tags", "refs/tags/v*").provider.attributeCondition,
+      identity("cond-tags", ["refs/tags/v*"]).provider.attributeCondition,
     );
 
     const admits = (ref: string): boolean =>
@@ -125,6 +125,27 @@ describe("the attribute condition is one repository and one ref, which EP-02 tur
     expect(admits("refs/tags/v1.4.0")).toBe(true);
     expect(admits("refs/heads/main")).toBe(false);
     expect(admits("refs/tags/experiment")).toBe(false);
+  });
+
+  it("admits every named ref and nothing between them", async () => {
+    // The real deploy identity needs two refs: main pushes build images,
+    // version tags release them. Named refs, not the issuer at large -- the
+    // condition is an OR of the same two grammars, and everything not named
+    // is still rejected.
+    const condition = await resolve(
+      identity("cond-both", ["refs/heads/main", "refs/tags/v*"]).provider.attributeCondition,
+    );
+
+    const admits = (ref: string): boolean =>
+      attributeConditionAdmits(condition ?? "", { repository: "acme/checkout", ref });
+    expect(admits("refs/heads/main")).toBe(true);
+    expect(admits("refs/tags/v1.4.0")).toBe(true);
+    expect(admits("refs/heads/feature")).toBe(false);
+    expect(admits("refs/tags/experiment")).toBe(false);
+  });
+
+  it("refuses an empty ref list at construction", () => {
+    expect(() => identity("cond-none", [])).toThrow(/ref/);
   });
 
   it("refuses a wildcard repository at construction", () => {
@@ -136,7 +157,7 @@ describe("the attribute condition is one repository and one ref, which EP-02 tur
           service: "checkout",
           project: "checkout-production",
           repository: "acme/*",
-          ref: "refs/heads/main",
+          refs: ["refs/heads/main"],
         }),
     ).toThrow(/repository/);
   });

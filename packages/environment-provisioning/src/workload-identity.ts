@@ -35,28 +35,35 @@ export interface WorkloadIdentityArgs {
   readonly repository: string;
 
   /**
-   * The one ref allowed to deploy production, e.g. "refs/heads/main".
+   * The refs allowed to mint this identity, each exact ("refs/heads/main")
+   * or a single trailing-`*` prefix ("refs/tags/v*").
    *
-   * A single trailing `*` names a prefix — "refs/tags/v*" — because
-   * release-path deploys production from pushed version tags. Still one
-   * repository and one named ref shape, never the issuer at large.
+   * A list, because the real deploy identity needs exactly two: main pushes
+   * build and push images; pushed version tags release them. Every ref is
+   * named — the condition is an OR of named shapes, never the issuer at
+   * large, and everything not named stays rejected.
    */
-  readonly ref: string;
+  readonly refs: readonly string[];
 }
 
 /** The GitHub OIDC issuer. The only identity provider this module federates. */
 const GITHUB_ISSUER = "https://token.actions.githubusercontent.com";
 
 /**
- * Builds the provider's attribute condition. Exactly two grammars, and
- * `attributeConditionAdmits` evaluates exactly these two — the pair is what
- * lets the tests failure-inject both axes against the real emitted string.
+ * Builds the provider's attribute condition: the repository, AND an OR of
+ * ref clauses in exactly two grammars. `attributeConditionAdmits` evaluates
+ * exactly this shape — the pair is what lets the tests failure-inject both
+ * axes against the real emitted string.
  */
-export const buildAttributeCondition = (repository: string, ref: string): string => {
-  const repo = `assertion.repository == '${repository}'`;
-  return ref.endsWith("*")
-    ? `${repo} && assertion.ref.startsWith('${ref.slice(0, -1)}')`
-    : `${repo} && assertion.ref == '${ref}'`;
+export const buildAttributeCondition = (
+  repository: string,
+  refs: readonly string[],
+): string => {
+  const clause = (ref: string): string =>
+    ref.endsWith("*")
+      ? `assertion.ref.startsWith('${ref.slice(0, -1)}')`
+      : `assertion.ref == '${ref}'`;
+  return `assertion.repository == '${repository}' && (${refs.map(clause).join(" || ")})`;
 };
 
 /**
@@ -72,20 +79,34 @@ export const attributeConditionAdmits = (
   condition: string,
   claims: { readonly repository: string; readonly ref: string },
 ): boolean => {
-  const match = condition.match(
-    /^assertion\.repository == '([^']+)' && (?:assertion\.ref == '([^']+)'|assertion\.ref\.startsWith\('([^']+)'\))$/,
+  const shape = condition.match(
+    /^assertion\.repository == '([^']+)' && \((.+)\)$/,
   );
-  if (match === null) {
+  if (shape === null) {
     throw new Error(
       `Not a condition this module writes: "${condition}". Refusing to guess ` +
         `what it admits.`,
     );
   }
-  const [, repository, exactRef, refPrefix] = match;
+  const [, repository, refClauses] = shape;
+
+  const admitsRef = refClauses.split(" || ").map((clause) => {
+    const parsed = clause.match(
+      /^(?:assertion\.ref == '([^']+)'|assertion\.ref\.startsWith\('([^']+)'\))$/,
+    );
+    if (parsed === null) {
+      throw new Error(
+        `Not a ref clause this module writes: "${clause}". Refusing to guess.`,
+      );
+    }
+    const [, exactRef, refPrefix] = parsed;
+    return exactRef !== undefined
+      ? claims.ref === exactRef
+      : claims.ref.startsWith(refPrefix);
+  });
+
   if (claims.repository !== repository) return false;
-  return exactRef !== undefined
-    ? claims.ref === exactRef
-    : claims.ref.startsWith(refPrefix);
+  return admitsRef.some(Boolean);
 };
 
 /**
@@ -118,11 +139,19 @@ export class WorkloadIdentity extends pulumi.ComponentResource {
           `pool lets any repository deploy this service's production.`,
       );
     }
-    if (args.ref.indexOf("*") !== -1 && !args.ref.endsWith("*")) {
+    if (args.refs.length === 0) {
       throw new Error(
-        `WorkloadIdentity: ref may end with a single '*' to name a prefix ` +
-          `("refs/tags/v*"), nothing more — got "${args.ref}".`,
+        `WorkloadIdentity: at least one ref is required — an identity nothing ` +
+          `may mint is a misconfiguration, not a hardening.`,
       );
+    }
+    for (const ref of args.refs) {
+      if (ref.indexOf("*") !== -1 && !ref.endsWith("*")) {
+        throw new Error(
+          `WorkloadIdentity: a ref may end with a single '*' to name a prefix ` +
+            `("refs/tags/v*"), nothing more — got "${ref}".`,
+        );
+      }
     }
 
     super("runway:environment:WorkloadIdentity", name, {}, opts);
@@ -132,7 +161,7 @@ export class WorkloadIdentity extends pulumi.ComponentResource {
       {
         workloadIdentityPoolId: `${args.service}-github`,
         project: args.project,
-        description: `GitHub federation for ${args.repository}, ${args.ref}`,
+        description: `GitHub federation for ${args.repository}, ${args.refs.join(" ")}`,
       },
       { parent: this },
     );
@@ -151,7 +180,7 @@ export class WorkloadIdentity extends pulumi.ComponentResource {
         },
         // The control. Repository alone is insufficient — a fork's pull
         // request runs in the repository's context; the ref pins which one.
-        attributeCondition: buildAttributeCondition(args.repository, args.ref),
+        attributeCondition: buildAttributeCondition(args.repository, args.refs),
       },
       { parent: this },
     );

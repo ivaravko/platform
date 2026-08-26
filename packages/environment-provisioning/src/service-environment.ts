@@ -28,8 +28,11 @@ export interface CiDeployer {
   /** The one GitHub repository allowed to deploy, as "org/repo". */
   readonly repository: string;
 
-  /** The one ref allowed to deploy; a trailing `*` names a prefix. */
-  readonly ref: string;
+  /**
+   * The refs allowed to mint the deploy identity — typically main (image
+   * pushes) and the release tag prefix. Each exact or trailing-`*` prefix.
+   */
+  readonly refs: readonly string[];
 
   /**
    * The adopted project's **current** IAM policy, audited before a single
@@ -104,8 +107,11 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
   /** Where this environment's Pulumi state lives. Versioned; never shared. */
   public readonly stateBucket: gcp.storage.Bucket;
 
-  /** The deploy grant: the group for staging, the deployer SA for production. */
-  public readonly deployGrant: gcp.projects.IAMMember;
+  /**
+   * The deploy grants: one role to the group for staging; the deployer SA's
+   * role set for production. Always to exactly one principal per environment.
+   */
+  public readonly deployGrants: readonly gcp.projects.IAMMember[];
 
   /** The deployers' access to this environment's state, on the bucket only. */
   public readonly stateAccessGrant: gcp.storage.BucketIAMMember;
@@ -183,13 +189,13 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
     );
 
     let deployMember: pulumi.Input<string>;
-    let deployRole: string;
+    let deployRoles: readonly string[];
     if ("humans" in deployable) {
       // EP-04. roles/run.developer, not run.admin: deploying is create and
       // update; rewriting the service's IAM is escalation, and nothing about
       // deploying to staging needs it.
       deployMember = groupMember(deployable.humans.group);
-      deployRole = "roles/run.developer";
+      deployRoles = ["roles/run.developer"];
     } else {
       const ci = deployable.ci;
 
@@ -201,23 +207,34 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
           service: args.service,
           project,
           repository: ci.repository,
-          ref: ci.ref,
+          refs: ci.refs,
         },
         { parent: this },
       );
 
-      // run.admin, unlike staging's run.developer: the CI deploy runs the
-      // whole infra program, which manages the service's own IAM (invoker
-      // bindings on a justified public service). A person never holds this —
-      // that is EP-01, enforced above and audited before it.
+      // The CI deploy runs the whole infra program, so the deployer needs
+      // what the program manages, not only run.services.*: the artifact
+      // registry it creates and pushes into, the runtime service account it
+      // creates and acts as, and the service IAM SecureContainerService
+      // manages (invoker bindings on a justified public service). Every role
+      // goes to the one federated identity — a person never holds any of
+      // them; that is EP-01, enforced above and audited before it.
       deployMember = pulumi.interpolate`serviceAccount:${this.federation.deployerEmail}`;
-      deployRole = "roles/run.admin";
+      deployRoles = [
+        "roles/run.admin",
+        "roles/artifactregistry.admin",
+        "roles/iam.serviceAccountAdmin",
+        "roles/iam.serviceAccountUser",
+      ];
     }
 
-    this.deployGrant = new gcp.projects.IAMMember(
-      `${name}-deploy`,
-      { project, role: deployRole, member: deployMember },
-      { parent: this },
+    this.deployGrants = deployRoles.map(
+      (role, index) =>
+        new gcp.projects.IAMMember(
+          index === 0 ? `${name}-deploy` : `${name}-deploy-${String(index)}`,
+          { project, role, member: deployMember },
+          { parent: this },
+        ),
     );
 
     // State access on the bucket, not project-wide: the deployers read and
@@ -235,7 +252,7 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
     this.registerOutputs({
       project: this.project,
       stateBucket: this.stateBucket,
-      deployGrant: this.deployGrant,
+      deployGrants: this.deployGrants,
       stateAccessGrant: this.stateAccessGrant,
       federation: this.federation,
     });

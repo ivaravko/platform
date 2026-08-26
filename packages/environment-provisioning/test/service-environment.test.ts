@@ -125,7 +125,11 @@ const production = (
     environment: "production",
     location: "europe-west1",
     deployableBy: {
-      ci: { repository: "acme/checkout", ref: "refs/tags/v*", existingPolicy },
+      ci: {
+        repository: "acme/checkout",
+        refs: ["refs/heads/main", "refs/tags/v*"],
+        existingPolicy,
+      },
     },
   });
 
@@ -168,7 +172,7 @@ describe("EP-01: production grants no deploy role to any human principal", () =>
     // deploy, so there is no field to supply one through.
     const args = Object.keys({
       repository: "",
-      ref: "",
+      refs: [],
       existingPolicy: { bindings: [] },
       customRolePermissions: {},
     });
@@ -182,17 +186,20 @@ describe("EP-02: the deploy role goes only to the federated CI identity", () => 
     await resolve(env.project);
     const created = await resourcesFor("ep02");
 
-    // Enumerated, never counted: a count of one would pass for the wrong
-    // single binding. Every project-level grant, with role and member.
+    // Enumerated, never counted: a count would pass for the wrong bindings.
+    // Every project-level grant, with role and member — the full role set
+    // the infra program needs, every one to the same single machine
+    // identity, and nothing else.
+    const DEPLOYER =
+      "serviceAccount:checkout-deployer@checkout-production.iam.gserviceaccount.com";
     const projectGrants = created
       .filter((r) => r.type === PROJECT_IAM_TYPE)
       .map((r) => ({ role: r.props.role, member: r.props.member }));
-    expect(projectGrants).toEqual([
-      {
-        role: "roles/run.admin",
-        member:
-          "serviceAccount:checkout-deployer@checkout-production.iam.gserviceaccount.com",
-      },
+    expect(projectGrants.toSorted((a, b) => String(a.role).localeCompare(String(b.role)))).toEqual([
+      { role: "roles/artifactregistry.admin", member: DEPLOYER },
+      { role: "roles/iam.serviceAccountAdmin", member: DEPLOYER },
+      { role: "roles/iam.serviceAccountUser", member: DEPLOYER },
+      { role: "roles/run.admin", member: DEPLOYER },
     ]);
 
     // The impersonation binding, likewise enumerated: the repository's
@@ -230,8 +237,9 @@ describe("EP-02: the deploy role goes only to the federated CI identity", () => 
     const admits = (repository: string, ref: string): boolean =>
       attributeConditionAdmits(condition ?? "", { repository, ref });
     expect(admits("acme/checkout", "refs/tags/v1.4.0")).toBe(true);
+    expect(admits("acme/checkout", "refs/heads/main")).toBe(true);
     expect(admits("acme/other", "refs/tags/v1.4.0")).toBe(false);
-    expect(admits("acme/checkout", "refs/heads/main")).toBe(false);
+    expect(admits("acme/checkout", "refs/heads/feature")).toBe(false);
   });
 
   it("derives production's own state bucket, distinct from staging's (EP-05)", async () => {
@@ -287,7 +295,7 @@ describe("ServiceEnvironment is the unit — no environment-kind branch", () => 
         deployableBy: {
           ci: {
             repository: "acme/checkout",
-            ref: "refs/tags/v*",
+            refs: ["refs/tags/v*"],
             existingPolicy: cleanAdoptedPolicy,
           },
         },

@@ -42,7 +42,7 @@ const environmentPlan = (options: BootstrapOptions, environment: string): string
     lines.push(
       `  deploy grant        roles/run.admin -> serviceAccount:${options.service}-deployer@${project}.iam.gserviceaccount.com`,
       `  identity pool       ${options.service}-github, provider "github"`,
-      `  federation          ${options.repository ?? "<org/repo>"}, refs/tags/v* — the release path's tags`,
+      `  federation          ${options.repository ?? "<org/repo>"}: refs/heads/main (image pushes) + refs/tags/v* (releases)`,
     );
   }
   return lines;

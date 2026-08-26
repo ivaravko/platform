@@ -181,7 +181,7 @@ Seven controls carry the entire guarantee. Each has exactly one named test.
 | Id    | Control                                                                                          | Why it matters |
 |-------|--------------------------------------------------------------------------------------------------|----------------|
 | EP-01 | The production project grants **no deploy role to any human principal** — no user, no group        | Without this the rest is theatre |
-| EP-02 | The production deploy role is granted **only** to the CI federated identity, scoped to one repository and one branch | An unscoped pool lets any repo in the org deploy your production |
+| EP-02 | The production deploy role is granted **only** to the CI federated identity, scoped to one repository and its **named refs** | An unscoped pool lets any repo in the org deploy your production |
 | EP-03 | CI authenticates by **Workload Identity Federation**; no service account key is created, ever      | [SPEC.md](SPEC.md#boundaries) forbids SA keys, and a key is a credential that can leave CI |
 | EP-04 | The staging project grants deploy to a **developers group**, not to individuals                    | Offboarding is a group removal, not an IAM archaeology exercise |
 | EP-05 | State buckets are **versioned and separately access-controlled per environment**                   | Whoever can write production state can forge production infrastructure |
@@ -199,8 +199,14 @@ principalSet://iam.googleapis.com/projects/<n>/locations/global/workloadIdentity
   attribute.repository/<org>/<repo>
 ```
 
-with the provider's attribute condition additionally pinning `assertion.ref == 'refs/heads/main'`.
-Repository alone is insufficient: a pull request from a fork runs in the repository's context.
+with the provider's attribute condition additionally pinning the ref. Repository alone is
+insufficient: a pull request from a fork runs in the repository's context.
+
+**Amended at implementation (2026-08-26): named refs, plural.** One exact ref cannot serve the real
+deploy identity — `refs/heads/main` builds and pushes images, and release-path deploys production
+from pushed `refs/tags/v*` tags. The condition is an OR of exactly those named shapes, each exact
+or a single trailing-`*` prefix, and everything not named stays rejected. The spirit — never the
+issuer at large — is unchanged; the letter moved from "one ref" to "its named refs".
 
 ### Identity federation is per service
 
