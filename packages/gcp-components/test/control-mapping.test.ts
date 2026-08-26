@@ -21,11 +21,18 @@ interface MappingRow {
   readonly policyRule: string;
 }
 
-/** Parses the control tables. Rows are `| XX-0N | … | source | … | … | rule |`. */
+/**
+ * Parses the control tables. Rows are `| XX-0N | … | source | … | … | rule |`.
+ *
+ * Scoped to this package's prefixes: the mapping document is shared, and the
+ * EP rows in it are guarded by environment-provisioning's own checker against
+ * its own suite. Without the scope, every EP row would demand a test in this
+ * package — the wrong suite to prove it.
+ */
 const rows = (): MappingRow[] =>
   readFileSync(MAPPING, "utf-8")
     .split("\n")
-    .filter((line) => /^\|\s*[A-Z]{2}-\d{2}\s*\|/.test(line))
+    .filter((line) => /^\|\s*(CR|SA|AR)-\d{2}\s*\|/.test(line))
     .map((line) => {
       const cells = line.split("|").map((c) => c.trim());
       // cells[0] is the empty string before the leading pipe.

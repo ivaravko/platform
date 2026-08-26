@@ -1,12 +1,15 @@
 # Control Mapping
 
-One row per hardening control in [`@runway/gcp-components`](../packages/gcp-components). Each row
-names the external guidance it rests on, the component that applies it, the tests that prove it, and
-the policy rule that catches consumers who bypass the component entirely.
+One row per hardening control in [`@runway/gcp-components`](../packages/gcp-components) and
+[`@runway/environment-provisioning`](../packages/environment-provisioning). Each row names the
+external guidance it rests on, the component that applies it, the tests that prove it, and — for
+the component library — the policy rule that catches consumers who bypass the component entirely.
 
 **This file is checked by a test, in both directions.** A control without a row fails, and a row
-without a test fails — see `packages/gcp-components/test/control-mapping.test.ts`. A mapping
-document that has drifted from its suite is worse than no document, because it reads as proof.
+without a test fails. Each package guards its own prefixes against its own suite:
+`packages/gcp-components/test/control-mapping.test.ts` for CR/SA/AR, and
+`packages/environment-provisioning/test/control-mapping.test.ts` for EP. A mapping document that
+has drifted from its suite is worse than no document, because it reads as proof.
 
 ## On the `Source` column
 
@@ -69,6 +72,24 @@ reads as a control while retaining everything.
 
 CMEK is supported through `kmsKeyName` and not required — there is no KMS component until v2, so it
 is bring-your-own-key. See [Artifact Registry: CMEK](https://cloud.google.com/artifact-registry/docs/cmek).
+
+## Controls: `@runway/environment-provisioning`
+
+[SPEC-environment-provisioning.md](../SPEC-environment-provisioning.md) defines EP-01–EP-07. Rows
+accrete here as the E-series lands — each control's row appears with the task that proves it, and
+the package's checker refuses a row without a test in either direction. The E5 checkpoint is where
+all seven must be present.
+
+| Control | Requirement | Source | Enforced in | Tests | Policy rule |
+|---|---|---|---|---|---|
+| EP-06 | Bootstrap fails if the adopted production project already grants a deploy-capable role to any human principal, listing every offending binding | [Cloud Run: IAM roles](https://docs.cloud.google.com/run/docs/reference/iam/roles), [IAM: granting and revoking access](https://docs.cloud.google.com/iam/docs/granting-changing-revoking-access) | `auditProductionPolicy` | `EP-06: …` | — |
+
+**EP-06 refuses and never repairs.** The audit is structurally incapable of a write — the package
+carries no runtime dependency, asserted by test — and the refusal carries the whole decision:
+every offending binding, what would be untrue if adoption proceeded, that nothing was changed, and
+what to do next. Deploy-capability is decided by permissions, never role names: the deploy verbs
+are `run.services.create`, `run.services.update` and `run.services.setIamPolicy`, with predefined
+roles resolved through a stated table verified against `gcloud iam roles describe`.
 
 ## Reading the columns
 

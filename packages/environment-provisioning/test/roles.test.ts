@@ -13,7 +13,11 @@ import {
  * without "run" appearing anywhere in its name.
  */
 
-describe("EP-01/EP-02/EP-06: the deploy permission set", () => {
+// Deliberately not titled "EP-NN: …": the mapping scanner reads a leading
+// control id as "this test proves that control", and E1 underpins EP-01,
+// EP-02 and EP-06 without being the proof of any of them. The "EP-" in the
+// titles keeps `npm test -- -t "EP-"` selecting these.
+describe("the deploy permission set, which EP-01, EP-02 and EP-06 turn on", () => {
   it("names exactly the three deploy verbs the spec states", () => {
     // The reference is roles/run.admin: create and update are what "deploy"
     // means, and setIamPolicy grants the ability to grant the rest.
@@ -78,7 +82,7 @@ describe("EP-01/EP-02/EP-06: the deploy permission set", () => {
   });
 });
 
-describe("EP-01/EP-02/EP-06: failure injection — the silently-permissive direction", () => {
+describe("the deploy permission set: failure injection, which EP-06 turns on", () => {
   it("does not flag a role merely because its name contains 'run'", () => {
     // The false-positive direction is how a control gets switched off: a
     // check that cries wolf on runtimeconfig.admin gets disabled, and then
