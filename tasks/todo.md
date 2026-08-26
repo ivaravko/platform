@@ -25,24 +25,24 @@ forbids it from knowing which stack it is — so the check lives where the confi
 generated repo.
 
 **Acceptance criteria**
-- [ ] The scaffold emits a test (inside the generated repo's own suite) asserting
+- [x] The scaffold emits a test (inside the generated repo's own suite) asserting
       `Pulumi.production.yaml` contains no `imageTag` and no image reference that is not
       digest-pinned (`sha256:`), with a message saying *why* — a tag can be repointed, and then
       production runs something no environment tested
-- [ ] `infra/index.ts` is untouched. **The program still never branches on stack name** — SS-01 and
+- [x] `infra/index.ts` is untouched. **The program still never branches on stack name** — SS-01 and
       SS-02 are reconciled by placement, not by a conditional
-- [ ] The emitted check tolerates the legitimate states: no image key at all (pre-promotion — the
+- [x] The emitted check tolerates the legitimate states: no image key at all (pre-promotion — the
       honest state), and `imageDigest` written by CI
-- [ ] Criterion-7 line budget measured before and after; the emitted test counts as human-read
+- [x] Criterion-7 line budget measured before and after; the emitted test counts as human-read
 
 **Verification**
-- [ ] **Failure-injected, platform side**: the generation tier writes `imageTag: v2` into a
+- [x] **Failure-injected, platform side**: the generation tier writes `imageTag: v2` into a
       scaffold's `Pulumi.production.yaml` and asserts the generated repo's own suite fails on it —
       the check proven to fire, not merely to exist
-- [ ] The build-out tier still passes end to end: a fresh scaffold with the check runs green,
+- [x] The build-out tier still passes end to end: a fresh scaffold with the check runs green,
       because its pristine production config is a legitimate state
-- [ ] `npm test --workspace @runway/cli -- -t "SS-02"` passes offline
-- [ ] Line-count delta stated in the PR
+- [x] `npm test --workspace @runway/cli -- -t "SS-02"` passes offline
+- [x] Line-count delta stated in the PR
 
 **Dependencies:** None
 **Files:** `packages/runway-cli/src/templates/runway-service-project.ts`,
