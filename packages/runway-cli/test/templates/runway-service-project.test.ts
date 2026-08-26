@@ -480,8 +480,13 @@ describe("container image", () => {
     }
   });
 
-  it("documents the local build, credential included", () => {
-    expect(read("README.md")).toContain("docker build --secret");
+  it("documents the local build — credential and platform included", () => {
+    // --platform linux/amd64: Cloud Run rejects an arm64 manifest at deploy
+    // time, after the push, against an immutable tag. The README says so
+    // because that tag is burned forever.
+    expect(read("README.md")).toContain(
+      "docker build --platform linux/amd64 --secret",
+    );
   });
 });
 
