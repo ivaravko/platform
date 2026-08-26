@@ -166,6 +166,16 @@ export interface RunwayServiceProjectOptions {
  */
 export class RunwayServiceProject extends typescript.TypeScriptProject {
   constructor(options: RunwayServiceProjectOptions) {
+    // A runtime check, not just a type: the generated repo runs its
+    // .projenrc.ts through Node's type stripping, which checks nothing, and
+    // a missing region regenerated every workflow with
+    // "undefined-docker.pkg.dev" -- silently, until the first CI push.
+    if (typeof options.region !== "string" || options.region === "") {
+      throw new Error(
+        "RunwayServiceProject: region is required (e.g. region: \"europe-west1\") -- " +
+          "it names the registry host in every workflow this scaffold emits.",
+      );
+    }
     const runwayCli =
       options.runwayCliVersion ?? localPackage("runway-cli") ?? RUNWAY_VERSION;
 
@@ -306,7 +316,7 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
     this.addLintTasks();
     this.addOxlintConfig();
     this.addNpmrc();
-    this.addSampleCode(runwayCli);
+    this.addSampleCode(runwayCli, options.region);
   }
 
   /**
@@ -740,13 +750,17 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
    * code and the one config it is meant to hand-edit, so projen writes them
    * once and never overwrites them.
    */
-  private addSampleCode(runwayCli: string): void {
+  private addSampleCode(runwayCli: string, region: string): void {
     new SampleFile(this, ".projenrc.ts", {
       contents: [
         `import { RunwayServiceProject } from "@runway/cli";`,
         "",
         "const project = new RunwayServiceProject({",
         `  name: "${this.name}",`,
+        // Region must survive regeneration: the emitted projenrc is what the
+        // repo re-runs, and omitting it here regenerated every workflow with
+        // an undefined registry host.
+        `  region: "${region}",`,
         `  runwayCliVersion: "${runwayCli}",`,
         "  // This repo *is* the project. Without it, regenerating would create",
         "  // a nested copy in a subdirectory named after the service.",

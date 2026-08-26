@@ -759,3 +759,21 @@ describe("federated CI leaves no residue", () => {
     expect(read(".gitignore")).toContain("gha-creds-*.json");
   });
 });
+
+describe("regeneration keeps its region", () => {
+  it("emits the region into .projenrc.ts", () => {
+    // The repo re-runs its own projenrc through type stripping, which checks
+    // nothing: without the region persisted here, regeneration rebuilt every
+    // workflow against undefined-docker.pkg.dev. Observed in CI, silently.
+    expect(read(".projenrc.ts")).toContain('region: "europe-west1"');
+  });
+
+  it("refuses construction without a region, loudly", () => {
+    expect(
+      () =>
+        new RunwayServiceProject({
+          name: "demo",
+        } as unknown as ConstructorParameters<typeof RunwayServiceProject>[0]),
+    ).toThrow(/region is required/);
+  });
+});

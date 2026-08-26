@@ -33,7 +33,7 @@ const WORKSPACE_GLOB = "packages/*";
 // 0.1.1: the scaffold that emits Dockerfile, release.yml and the package
 // job, published-version deps in generated repos, and runway bootstrap's
 // provisioning path.
-const PACKAGE_VERSION = "0.1.3";
+const PACKAGE_VERSION = "0.1.4";
 const REGISTRY =
   "https://europe-west1-npm.pkg.dev/enduring-badge-506610-u9/runway/";
 
