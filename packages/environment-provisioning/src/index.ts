@@ -25,6 +25,9 @@ export {
   noServiceAccountKeys,
 } from "./policy/no-service-account-keys";
 
+export { serviceCompleteness } from "./plan";
+export type { ServiceCompleteness } from "./plan";
+
 export { auditProductionPolicy } from "./audit";
 export type {
   AuditProductionPolicyOptions,

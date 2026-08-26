@@ -8,10 +8,10 @@ import { describe, expect, it } from "vitest";
  * package's prefix — the document is shared; the proof is per-package.
  *
  * Unlike that checker, contiguity-from-one is not asserted: EP ids are
- * assigned by SPEC-environment-provisioning.md, all seven up front, and rows
- * accrete as the E-series lands. What is asserted instead is that every row
- * is one of the spec's seven. The E5 checkpoint tightens this to "all seven
- * present".
+ * assigned by SPEC-environment-provisioning.md, all seven up front. The
+ * build-up phase asserted rows ⊆ the spec's seven; with E6 landed the set is
+ * complete, and the assertion is now equality — a row disappearing is a
+ * regression, not an accretion state.
  */
 
 const repoRoot = join(__dirname, "..", "..", "..");
@@ -58,12 +58,8 @@ const controlIdsInTests = (): Set<string> => {
 };
 
 describe("EP control mapping completeness", () => {
-  it("names only controls the spec defines, each at most once", () => {
-    const ids = rows().map((r) => r.id);
-    expect(new Set(ids).size).toBe(ids.length);
-    for (const id of ids) {
-      expect(SPEC_CONTROLS, id).toContain(id);
-    }
+  it("names every control the spec defines, exactly once each", () => {
+    expect(rows().map((r) => r.id)).toEqual([...SPEC_CONTROLS].toSorted());
   });
 
   it("has no row without a test — a control nothing proves is not a control", () => {

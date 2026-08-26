@@ -29,10 +29,10 @@ export const SERVICE_NAME = /^[a-z][a-z0-9-]*$/;
  * Both are checked when the name is typed rather than surfacing later as a GCP
  * API error partway through `runway bootstrap`.
  */
-const MAX_NAME_LENGTH = 30 - "-production".length;
+export const MAX_NAME_LENGTH = 30 - "-production".length;
 
 /** Reads `--flag value`. Returns undefined when absent or when the value is missing. */
-const flagValue = (args: string[], flag: string): string | undefined => {
+export const flagValue = (args: string[], flag: string): string | undefined => {
   const index = args.indexOf(flag);
   if (index === -1) return undefined;
   const value = args[index + 1];
