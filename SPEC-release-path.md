@@ -95,6 +95,12 @@ protects the registry, not a consumer who re-reads one later.
 swallow and continue past, and the failure then arrives as a Cloud Run revision that cannot pull its
 image — long after the release looked successful.
 
+**Its failure mode is proven against a real registry** (2026-08-26,
+`test-integration/deploy/release-resolution.test.ts`): the exact resolve command run against a tag
+nothing pushed exits non-zero *and* yields no digest — either half alone stops `release.yml` before
+a deploy step. The positive half, a present tag resolving, waits for the first real release: nothing
+can push an image until a generated repo's CI has federation.
+
 ## Rollback is the same release, dispatched
 
 Production rolls back through an explicit path, and the path is not a new mechanism. `release.yml`
