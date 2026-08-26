@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { RunwayServiceProject } from "../../src";
+import { withLocalPackages } from "../support/local-links";
 
 /**
  * Task 2: the scaffold must build, and it must carry the TypeScript 7 survival
@@ -178,11 +179,25 @@ describe("TypeScript 7 survival kit", () => {
     expect(vitest?.receiveArgs).toBe(true);
   });
 
-  it("resolves @runway/cli by file: link so the repo can regenerate itself", () => {
+  it("resolves @runway/* by published version, not by a path on one laptop", () => {
+    // E9. Until the packages were published these were `file:` links to
+    // absolute paths inside the developer's home directory, so a generated repo
+    // built on the machine that made it and nowhere else -- not on a colleague's
+    // checkout, not in CI, and not inside a container. That is what blocked the
+    // Dockerfile, and it is the reason this module exists.
     const pkg = JSON.parse(read("package.json")) as {
+      dependencies: Record<string, string>;
       devDependencies: Record<string, string>;
     };
-    expect(pkg.devDependencies["@runway/cli"]).toMatch(/^file:/);
+
+    expect(pkg.devDependencies["@runway/cli"]).toMatch(/^\^?\d+\.\d+\.\d+$/);
+    expect(pkg.dependencies["@runway/gcp-components"]).toMatch(/^\^?\d+\.\d+\.\d+$/);
+  });
+
+  it("carries no absolute path anywhere in package.json", () => {
+    // The narrower assertion above checks two known keys. This one catches a
+    // third link added later, and any machine-specific path at all.
+    expect(read("package.json")).not.toMatch(/file:|\/Users\/|\/home\//);
   });
 });
 
@@ -223,7 +238,13 @@ describe("build-out", () => {
     () => {
       const dir = mkdtempSync(join(tmpdir(), "runway-buildout-"));
       try {
-        new RunwayServiceProject({ name: "demo", outdir: dir, region: "europe-west1" }).synth();
+        withLocalPackages(() =>
+          new RunwayServiceProject({
+            name: "demo",
+            outdir: dir,
+            region: "europe-west1",
+          }).synth(),
+        );
         // Install precedes projen: .projenrc.ts imports projen and cannot run
         // before node_modules exists.
         for (const [cmd, args] of [
@@ -393,6 +414,17 @@ describe("scaffold toolchain", () => {
     // cannot install at all. Peer checking is disabled repo-wide as a result.
     expect(tree).toContain(".npmrc");
     expect(read(".npmrc")).toContain("legacy-peer-deps=true");
+  });
+
+  it("points the @runway scope at Artifact Registry, and carries no token", () => {
+    // A published version is unresolvable without knowing where it lives, so
+    // the scope mapping ships with the repo. The credential does not: it is
+    // short-lived, per-developer, and belongs in ~/.npmrc — this file is
+    // committed, and a token in it would be a secret in git.
+    const npmrc = read(".npmrc");
+    expect(npmrc).toContain("@runway:registry=");
+    expect(npmrc).toContain("npm.pkg.dev");
+    expect(npmrc).not.toMatch(/_authToken|_auth=|ya29\./);
   });
 
   it("depends on the components package", () => {

@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { withLocalPackages } from "./support/local-links";
 
 /**
  * Task 3 exercises the shipped entry point, not the project type: `bin` points
@@ -66,15 +67,18 @@ describe("runway new", () => {
   });
 
   it("produces a repo that builds, through the binary end to end", () => {
-    expect(run("new", "demo", "--region", "europe-west1").status).toBe(0);
+    // The env var reaches the scaffold through spawnSync's inherited env.
+    withLocalPackages(() => {
+      expect(run("new", "demo", "--region", "europe-west1").status).toBe(0);
 
-    const dir = join(cwd, "demo");
-    for (const [cmd, args] of [
-      ["npm", ["install"]],
-      ["npm", ["run", "build"]],
-    ] as const) {
-      execFileSync(cmd, args, { cwd: dir, stdio: "pipe" });
-    }
+      const dir = join(cwd, "demo");
+      for (const [cmd, args] of [
+        ["npm", ["install"]],
+        ["npm", ["run", "build"]],
+      ] as const) {
+        execFileSync(cmd, args, { cwd: dir, stdio: "pipe" });
+      }
+    });
   }, 600_000);
 });
 

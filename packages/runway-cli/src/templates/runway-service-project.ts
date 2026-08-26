@@ -66,6 +66,41 @@ const CLIENT_DEV = [
 const OXLINT = "oxlint@1.80.0";
 const OXLINT_TSGOLINT = "oxlint-tsgolint@7.0.2001";
 
+/**
+ * Where `@runway/*` is published, and which version a generated repo pins.
+ *
+ * Before E9 these were `file:` links to absolute paths inside whichever home
+ * directory ran `runway new`. The repo built on that one machine and nowhere
+ * else -- not on a colleague's checkout, not in CI, not inside a container --
+ * which is what blocked the Dockerfile.
+ *
+ * A caret range rather than an exact pin, per SPEC.md's version policy: exact
+ * pins are for `@pulumi/*`, where a mismatched provider is a real hazard. The
+ * generated repo commits a lockfile, so the caret widens what an explicit
+ * upgrade may resolve to without changing what an ordinary install gets.
+ */
+const RUNWAY_VERSION = "^0.1.0";
+const RUNWAY_REGISTRY =
+  "https://europe-west1-npm.pkg.dev/enduring-badge-506610-u9/runway/";
+
+/**
+ * Escape hatch for this repository's own build-out tests.
+ *
+ * Those tests run a real `npm install` on a scaffold as a blocking gate, and
+ * the published registry needs Google credentials that the platform's CI does
+ * not have -- so gating on it would make a unit tier depend on GCP auth. With
+ * this set, the scaffold links the workspace copies instead.
+ *
+ * It is deliberately not a constructor option: `runway new` reaches the project
+ * type through the CLI binary, so a test driving the real command line has no
+ * other way to reach it. The published default is what every user gets, and the
+ * integration tier -- which already needs credentials -- proves that path.
+ */
+const localPackage = (name: string): string | undefined =>
+  process.env.RUNWAY_LINK_LOCAL_PACKAGES
+    ? `file:${resolve(cliPackageRoot(), "..", name)}`
+    : undefined;
+
 export interface RunwayServiceProjectOptions {
   /** Service name. Becomes the package name and the repository directory. */
   readonly name: string;
@@ -85,10 +120,8 @@ export interface RunwayServiceProjectOptions {
   /**
    * How the generated repo resolves `@runway/cli` to regenerate itself.
    *
-   * Defaults to a `file:` link at the package that produced the scaffold, which
-   * is what makes the emitted repo buildable before `@runway/cli` is published.
-   * Swapping this for an exact published version is the one change release
-   * requires.
+   * Defaults to the published version. Override to test a scaffold against an
+   * unreleased build without publishing one.
    */
   readonly runwayCliVersion?: string;
 }
@@ -101,7 +134,8 @@ export interface RunwayServiceProjectOptions {
  */
 export class RunwayServiceProject extends typescript.TypeScriptProject {
   constructor(options: RunwayServiceProjectOptions) {
-    const runwayCli = options.runwayCliVersion ?? `file:${cliPackageRoot()}`;
+    const runwayCli =
+      options.runwayCliVersion ?? localPackage("runway-cli") ?? RUNWAY_VERSION;
 
     super({
       name: options.name,
@@ -134,12 +168,13 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
         },
       },
 
-      // The components the infra program composes. A `file:` link while
-      // @runway/gcp-components is unpublished; D7 swaps it for a version.
+      // The components the infra program composes.
       deps: [
         PULUMI,
         PULUMI_GCP,
-        `@runway/gcp-components@${componentsPackage()}`,
+        `@runway/gcp-components@${
+          localPackage("gcp-components") ?? RUNWAY_VERSION
+        }`,
         ...CLIENT,
       ],
 
@@ -264,6 +299,19 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
         "# genuinely incompatible peer elsewhere will now install silently. The",
         "# @pulumi/* versions are pinned exactly to compensate.",
         "legacy-peer-deps=true",
+        "",
+        "# @runway/* is published to Artifact Registry, not to npmjs.com, so the",
+        "# scope mapping has to ship with the repo -- a version alone is",
+        "# unresolvable without knowing where it lives.",
+        "#",
+        "# No credential here, deliberately. This file is committed; a token in it",
+        "# would be a secret in git. Authenticate once, into your own ~/.npmrc:",
+        "#",
+        "#   npx google-artifactregistry-auth --credential-config=$HOME/.npmrc",
+        "#",
+        "# CI authenticates through Workload Identity Federation instead.",
+        `@runway:registry=${RUNWAY_REGISTRY}`,
+        `${RUNWAY_REGISTRY.replace(/^https:/, "")}:always-auth=true`,
         "",
       ],
     });
@@ -519,7 +567,7 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
 }
 
 /**
- * Absolute path to this package, for the generated repo's `file:` dependency.
+ * Absolute path to this package, for the local-link escape hatch above.
  *
  * `__dirname`, not `import.meta.url`: this package compiles to CommonJS, where
  * `import.meta` is a syntax error. The depth is the same from `src/templates/`
@@ -527,15 +575,6 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
  * built output.
  */
 const cliPackageRoot = (): string => resolve(__dirname, "../..");
-
-/**
- * `file:` reference to the components package.
- *
- * Unpublished, so a version range cannot resolve yet. Swapping this for a
- * published version is a one-line change and is D7's job.
- */
-const componentsPackage = (): string =>
-  `file:${resolve(cliPackageRoot(), "../gcp-components")}`;
 
 /** What this is, how to run it, and where the guardrails live. */
 const renderReadme = (name: string): string =>

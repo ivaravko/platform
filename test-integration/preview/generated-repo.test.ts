@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -41,6 +41,26 @@ const SAMPLE_DIGEST =
 
 let repo: string;
 
+/**
+ * An npm config file carrying a short-lived Artifact Registry token.
+ *
+ * Written next to the scaffold and passed as `--userconfig`, rather than
+ * touching the developer's `~/.npmrc`: a test that edits a file in someone's
+ * home directory is a test that has to be trusted to clean up after itself, and
+ * this one is deleted with the temp repo either way. The scaffold's own
+ * committed `.npmrc` still supplies the scope mapping — only the credential is
+ * added here, which is the same split a real developer gets.
+ */
+const registryAuth = (dir: string): string => {
+  const token = execFileSync("gcloud", ["auth", "print-access-token"], {
+    encoding: "utf-8",
+  }).trim();
+  const host = "//europe-west1-npm.pkg.dev/enduring-badge-506610-u9/runway/";
+  const path = join(dir, ".npmrc-auth");
+  writeFileSync(path, `${host}:_authToken=${token}\n`, { mode: 0o600 });
+  return path;
+};
+
 /** Scaffold, install and build once; both previews run against the same repo. */
 beforeAll(async () => {
   repo = mkdtempSync(join(tmpdir(), "runway-generated-"));
@@ -52,7 +72,17 @@ beforeAll(async () => {
 
   // Pulumi runs `main: lib/index.js`, so the build is not optional here -- an
   // unbuilt repo fails with a missing entrypoint rather than a plan error.
-  execFileSync("npm", ["install"], { cwd: repo, stdio: "pipe" });
+  //
+  // Installed against the real Artifact Registry, deliberately. This is the only
+  // tier that resolves `@runway/*` the way a user's repo does; runway-cli's own
+  // build-out tests link the workspace copies, because gating a unit tier on
+  // Google credentials would make it red for reasons unrelated to the code.
+  // So the claim "a generated repo installs from the published registry" is
+  // proven here or nowhere.
+  execFileSync("npm", ["install", "--userconfig", registryAuth(repo)], {
+    cwd: repo,
+    stdio: "pipe",
+  });
   execFileSync("npm", ["run", "build"], { cwd: repo, stdio: "pipe" });
 }, 900_000);
 

@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { RunwayServiceProject } from "../../src";
+import { withLocalPackages } from "../support/local-links";
 
 /**
  * Task 5: the things a green CI run hides.
@@ -100,7 +101,13 @@ describe("workflow contract: stale output fails the build", () => {
       };
 
       try {
-        new RunwayServiceProject({ name: "demo", outdir: dir, region: "europe-west1" }).synth();
+        withLocalPackages(() =>
+          new RunwayServiceProject({
+            name: "demo",
+            outdir: dir,
+            region: "europe-west1",
+          }).synth(),
+        );
         execFileSync("npm", ["install"], { cwd: dir, stdio: "pipe" });
 
         // Detection lives in the workflow, not in the build task: the job runs
