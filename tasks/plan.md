@@ -118,14 +118,15 @@ Per task, on top of its own acceptance criteria:
 
 ## Open Questions
 
-1. **Which project does E7 audit as "production"?** The sandbox cannot be it: the account holds
-   `roles/owner` there, so EP-06 must refuse it — correctly. Proving the *refusal* is easy and
-   valuable; proving the *acceptance* path needs a project with no human deploy binding. A second
-   sandbox, or a subfolder project, or accept that E7 verifies only the refusal and the staging path.
-   **Blocks E7, nothing earlier.**
-2. **Is `runway bootstrap` authorized to write IAM, and to which projects?** Everything so far has
-   been preview-only. This is the first module whose point is a durable grant. Needed before E7,
-   not before E1–E6.
+1. ~~Which project does E7 audit as "production"?~~ **Resolved 2026-08-26: refusal-only.** No clean
+   production target exists, so E7 proves EP-06 refusing the owner-held sandbox and previews the
+   staging path; the acceptance path — and the observed 403 that is this module's central claim —
+   is recorded plainly as **unverified**, per E7's own stop condition. EP-06 is not weakened to
+   manufacture a pass.
+2. ~~Is `runway bootstrap` authorized to write IAM, and to which projects?~~ **Resolved 2026-08-26:
+   no — preview only.** The integration tier reads IAM policies and runs `pulumi preview`; it
+   writes nothing and grants nothing. The durable-grant path stays unexercised until this decision
+   is revisited, and E7's scope narrows accordingly.
 3. **`service-stacks` carries 3 unresolved open questions** and depends on this module. Worth
    resolving before E6 fixes the shape of `--print-config`, since that is the seam between them.
 4. **`release-path` has no spec.** It is last in the build order, so this does not block the E-series
