@@ -1,6 +1,7 @@
 # Implementation Plan: local-development — the loop the scaffold never had
 
-Active plan. A feature of `runway-cli`, not a module in the
+**Complete — closed 2026-08-26.** All five tasks landed on `main`; the close-out note at the end of
+[Open Questions](#open-questions) records the two accepted limits. A feature of `runway-cli`, not a module in the
 [capability map](../SPEC.md#capability-map) — see
 [SPEC-local-development.md](../SPEC-local-development.md) for why it gets a feature spec and no row.
 
@@ -132,7 +133,16 @@ Per task, on top of its own acceptance criteria:
    was real work, not a no-op.
 4. ~~**How much criterion-7 headroom is left?**~~ **RESOLVED — 92 lines** at the end of L3
    (208/300). Measured at 175 before any work; L2 cost 14 and L3 cost 19.
-5. **Does anything still assume `__dirname` in generated source?** L3 removed the one occurrence
-   after `node --watch` crashed on it — Node loads the `.ts` server as an ES module. Nothing else in
-   the scaffold uses it today, but nothing prevents it being reintroduced either. A lint rule or a
-   generation assertion would; neither exists. **Does not block L4 or L5.**
+5. ~~**Does anything still assume `__dirname` in generated source?**~~ **RESOLVED — a generation
+   assertion exists.** L3 removed the one occurrence after `node --watch` crashed on it — Node loads
+   the `.ts` server as an ES module. The guard that prevents reintroduction shipped with the
+   feature: `LD-03: generated src/ uses neither __dirname nor import.meta`, which scans every
+   generated `src/` file with comments stripped, so the server's own prose explanation of the fix
+   does not trip the rule it documents. An earlier revision of this entry said no such guard
+   existed; that was written before the assertion was added and not updated when it was.
+
+**All five open questions are resolved. The plan is closed** — L1–L5 complete, verified, and on
+`main`. The two recorded limits stand as accepted: LD-02's hot replacement is verified to the
+machinery, not to a driven browser, and the serving resolver bounds the resolved path, not the real
+path (symlinks inside `dist/client` — [SPEC-local-development.md, Open Question 5](../SPEC-local-development.md#open-questions)).
+Reopening either is new scope, not unfinished work.
