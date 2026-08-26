@@ -219,6 +219,19 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
       readme: { contents: renderReadme(options.name) },
     });
 
+    // The local-link escape hatch must also cover @runway/cli's own runtime
+    // dependency on @runway/environment-provisioning: a file:-linked cli still
+    // resolves its dep tree through npm, which would otherwise fetch e-p from
+    // the authenticated registry and break the offline build-out tier. An
+    // override pins the transitive resolution to the workspace copy; in the
+    // published default no override is emitted and the registry serves it.
+    const environmentProvisioning = localPackage("environment-provisioning");
+    if (environmentProvisioning !== undefined) {
+      this.package.addField("overrides", {
+        "@runway/environment-provisioning": environmentProvisioning,
+      });
+    }
+
     this.addStackConfig(options.region);
     this.addContainerImage(options.region);
     this.addReleaseWorkflow(options.region);

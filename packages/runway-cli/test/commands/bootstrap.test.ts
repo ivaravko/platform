@@ -138,11 +138,18 @@ describe("runway bootstrap: refusals come before anything else", () => {
     expect(result.stderr).toContain("--github-repo");
   });
 
-  it("refuses to provision at all, plainly, until E7 wires it", () => {
-    // Honesty over a silent no-op: a bare run must not pretend it deployed.
+  it("refuses to provision without a bootstrap state backend, naming it", () => {
+    // The wet path needs somewhere for the bootstrap stack's own state; a
+    // bare run gets the requirement, not a silent no-op or a guessed backend.
     const result = run(...FULL);
     expect(result.status).toBe(1);
-    expect(result.stderr).toMatch(/--dry-run|--print-config/);
+    expect(result.stderr).toContain("--bootstrap-state");
+  });
+
+  it("refuses an individual passed as the developers group", () => {
+    const result = run(...FULL, "--developers-group", "user:dana@acme.com", "--dry-run");
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/EP-04/);
   });
 });
 

@@ -13,8 +13,17 @@ import { WorkloadIdentity } from "./workload-identity";
 
 /** Humans deploy here: a developers group, never an individual (EP-04). */
 export interface HumanDeployers {
-  /** The group's email, with or without its `group:` prefix. */
-  readonly group: string;
+  /**
+   * The group's email, with or without its `group:` prefix.
+   *
+   * Optional, because an organisation may have no group yet — creating one
+   * is a Workspace-admin action this module cannot take. **Absent means no
+   * deploy grant is managed and EP-04 is not in force**, which `runway
+   * bootstrap` reports on every run rather than leaving to be noticed. It
+   * never means "grant an individual instead": a `user:` value is still
+   * rejected, and there is no per-person variant to fall back to.
+   */
+  readonly group?: string;
 }
 
 /**
@@ -113,8 +122,9 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
    */
   public readonly deployGrants: readonly gcp.projects.IAMMember[];
 
-  /** The deployers' access to this environment's state, on the bucket only. */
-  public readonly stateAccessGrant: gcp.storage.BucketIAMMember;
+  /** The deployers' access to this environment's state, on the bucket only.
+   * Absent exactly when no deployer principal exists to grant it to. */
+  public readonly stateAccessGrant?: gcp.storage.BucketIAMMember;
 
   /** Production's federated identity (EP-02, EP-03). Absent for staging. */
   public readonly federation?: WorkloadIdentity;
@@ -150,7 +160,9 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
     // proceed onto a compromised project. The audit's message is the error;
     // it carries the whole decision.
     if ("humans" in deployable) {
-      groupMember(deployable.humans.group);
+      if (deployable.humans.group !== undefined) {
+        groupMember(deployable.humans.group);
+      }
     } else {
       const audit = auditProductionPolicy({
         projectId: `${args.service}-${args.environment}`,
@@ -188,13 +200,17 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
       { parent: this },
     );
 
-    let deployMember: pulumi.Input<string>;
+    let deployMember: pulumi.Input<string> | undefined;
     let deployRoles: readonly string[];
     if ("humans" in deployable) {
       // EP-04. roles/run.developer, not run.admin: deploying is create and
       // update; rewriting the service's IAM is escalation, and nothing about
-      // deploying to staging needs it.
-      deployMember = groupMember(deployable.humans.group);
+      // deploying to staging needs it. No group yet means no grant at all —
+      // never an individual.
+      deployMember =
+        deployable.humans.group === undefined
+          ? undefined
+          : groupMember(deployable.humans.group);
       deployRoles = ["roles/run.developer"];
     } else {
       const ci = deployable.ci;
@@ -228,26 +244,33 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
       ];
     }
 
-    this.deployGrants = deployRoles.map(
-      (role, index) =>
-        new gcp.projects.IAMMember(
-          index === 0 ? `${name}-deploy` : `${name}-deploy-${String(index)}`,
-          { project, role, member: deployMember },
-          { parent: this },
-        ),
-    );
+    const member = deployMember;
+    this.deployGrants =
+      member === undefined
+        ? []
+        : deployRoles.map(
+            (role, index) =>
+              new gcp.projects.IAMMember(
+                index === 0 ? `${name}-deploy` : `${name}-deploy-${String(index)}`,
+                { project, role, member },
+                { parent: this },
+              ),
+          );
 
     // State access on the bucket, not project-wide: the deployers read and
     // write this environment's state and nothing else's.
-    this.stateAccessGrant = new gcp.storage.BucketIAMMember(
-      `${name}-state-access`,
-      {
-        bucket: this.stateBucket.name,
-        role: "roles/storage.objectAdmin",
-        member: deployMember,
-      },
-      { parent: this },
-    );
+    this.stateAccessGrant =
+      member === undefined
+        ? undefined
+        : new gcp.storage.BucketIAMMember(
+            `${name}-state-access`,
+            {
+              bucket: this.stateBucket.name,
+              role: "roles/storage.objectAdmin",
+              member,
+            },
+            { parent: this },
+          );
 
     this.registerOutputs({
       project: this.project,

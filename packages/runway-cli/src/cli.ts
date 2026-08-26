@@ -35,11 +35,16 @@ Bootstrap flags:
   --github-repo        org/repo allowed to deploy production. Required with
                        --production-project.
   --region             Required except with --print-config.
+  --developers-group   Group email granted staging deploy (EP-04). Optional:
+                       absent means no grant is managed, reported on every run.
+  --bootstrap-state    Backend for the bootstrap stack's own state, e.g.
+                       gs://<org>-runway-bootstrap-state. Required to provision.
   --dry-run            Print what would be created; change nothing.
   --print-config       Emit the repository variables and state backends.
+  --yes                Apply. Without it a provisioning run previews only.
 `;
 
-const main = (argv: string[]): number => {
+const main = async (argv: string[]): Promise<number> => {
   const [command, ...rest] = argv;
 
   if (command === undefined || command === "--help" || command === "-h") {
@@ -53,7 +58,7 @@ const main = (argv: string[]): number => {
   }
 
   if (command === "bootstrap") {
-    runBootstrap(rest);
+    await runBootstrap(rest);
     return 0;
   }
 
@@ -63,14 +68,17 @@ const main = (argv: string[]): number => {
   return 1;
 };
 
-try {
-  process.exitCode = main(process.argv.slice(2));
-} catch (error) {
-  // A usage problem is the user's, not a crash: message only, no stack trace.
-  if (error instanceof UsageError) {
-    process.stderr.write(`${error.message}\n`);
-    process.exitCode = 1;
-  } else {
-    throw error;
-  }
-}
+main(process.argv.slice(2)).then(
+  (code) => {
+    process.exitCode = code;
+  },
+  (error: unknown) => {
+    // A usage problem is the user's, not a crash: message only, no stack trace.
+    if (error instanceof UsageError) {
+      process.stderr.write(`${error.message}\n`);
+      process.exitCode = 1;
+    } else {
+      throw error;
+    }
+  },
+);

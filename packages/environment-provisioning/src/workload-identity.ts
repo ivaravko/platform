@@ -55,16 +55,16 @@ const GITHUB_ISSUER = "https://token.actions.githubusercontent.com";
  * exactly this shape — the pair is what lets the tests failure-inject both
  * axes against the real emitted string.
  */
+const refClause = (ref: string): string =>
+  ref.endsWith("*")
+    ? `assertion.ref.startsWith('${ref.slice(0, -1)}')`
+    : `assertion.ref == '${ref}'`;
+
 export const buildAttributeCondition = (
   repository: string,
   refs: readonly string[],
-): string => {
-  const clause = (ref: string): string =>
-    ref.endsWith("*")
-      ? `assertion.ref.startsWith('${ref.slice(0, -1)}')`
-      : `assertion.ref == '${ref}'`;
-  return `assertion.repository == '${repository}' && (${refs.map(clause).join(" || ")})`;
-};
+): string =>
+  `assertion.repository == '${repository}' && (${refs.map(refClause).join(" || ")})`;
 
 /**
  * Evaluates a condition this module wrote against a token's claims.

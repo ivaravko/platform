@@ -210,6 +210,11 @@ const cli = new typescript.TypeScriptProject({
   description:
     "Scaffolds a minimal, projen-managed repository for a new GCP service.",
   bin: { runway: "lib/cli.js" },
+  // The provisioning path: `runway bootstrap` composes ServiceEnvironment
+  // through the Automation API, so the CLI genuinely runs these at runtime.
+  // Exact @pulumi/* pins, per SPEC.md; e-p by published version, resolved
+  // from the workspace while developing here.
+  deps: [PULUMI, PULUMI_GCP, "@runway/environment-provisioning@^0.1.0"],
   // peerDeps, not deps, for the same reason @pulumi/* is a peer of
   // gcp-components: RunwayServiceProject *extends* projen's TypeScriptProject,
   // and the consumer's .projenrc.ts imports projen itself. Two copies would put

@@ -1,20 +1,21 @@
+import { spawnSync } from "node:child_process";
 import { MAX_NAME_LENGTH, SERVICE_NAME, UsageError, flagValue } from "./new";
 
 /**
- * `runway bootstrap` — parsing and composition for the identity boundary.
+ * `runway bootstrap` — the identity boundary, from parsing to provisioning.
  *
- * Provisioning itself is not wired yet: it needs credentials, a state
- * backend, and the authorization question plan OQ2 answers. What already
- * holds: every refusal fires before anything else could run, every name is
- * derived by the shared rule rather than trusted from a flag, and a service
- * without production is reported incomplete on every run (EP-07).
+ * Every refusal fires before anything else could run, every name is derived
+ * by the shared rule rather than trusted from a flag, and a service without
+ * production is reported incomplete on every run (EP-07). The wet path runs
+ * the ServiceEnvironment program through the Automation API against the
+ * bootstrap state backend the operator names — previewing by default, and
+ * applying only under `--yes`.
  *
- * No dependency on @runway/environment-provisioning, deliberately. The two
- * modules never tell each other an identifier — both compute it — and a
- * runtime dependency here would put an unpublished package into every
- * generated repository's install tree. The four not-enforced control ids
- * below are the same list `serviceCompleteness` states; its test is the
- * canonical one.
+ * The heavy imports (@pulumi/pulumi/automation, the environment module) are
+ * loaded lazily inside the wet path, so `runway new` and the offline modes
+ * never pay for them. The production project's live IAM policy is fetched by
+ * shelling out to gcloud — the operator running bootstrap has it, and the
+ * audit inside ServiceEnvironment then judges the real bindings (EP-06).
  */
 
 /** GitHub repository as "org/repo" — exactly one, no wildcards. */
@@ -74,10 +75,10 @@ const printConfig = (options: BootstrapOptions): string[] => {
 };
 
 /**
- * Parse, validate, and — for now — plan. Every check precedes any output, so
- * a refused invocation does nothing at all.
+ * Parse, validate, then plan or provision. Every check precedes any output,
+ * so a refused invocation does nothing at all.
  */
-export const runBootstrap = (args: string[]): void => {
+export const runBootstrap = async (args: string[]): Promise<void> => {
   const [name, ...rest] = args;
 
   if (name === undefined || name === "" || name.startsWith("--")) {
@@ -95,8 +96,19 @@ export const runBootstrap = (args: string[]): void => {
   const productionProject = flagValue(rest, "--production-project");
   const repository = flagValue(rest, "--github-repo");
   const region = flagValue(rest, "--region");
+  const developersGroup = flagValue(rest, "--developers-group");
+  const bootstrapState = flagValue(rest, "--bootstrap-state");
   const printOnly = rest.includes("--print-config");
   const dryRun = rest.includes("--dry-run");
+  const yes = rest.includes("--yes");
+
+  if (developersGroup !== undefined && developersGroup.includes(":")) {
+    throw new UsageError(
+      `runway bootstrap: --developers-group takes the group's bare email — ` +
+        `got ${JSON.stringify(developersGroup)}. An individual is refused ` +
+        `either way (EP-04).`,
+    );
+  }
 
   if (stagingProject === undefined) {
     throw new UsageError(
@@ -167,8 +179,190 @@ export const runBootstrap = (args: string[]): void => {
     return;
   }
 
-  throw new UsageError(
-    "runway bootstrap: provisioning is not wired yet. Run with --dry-run to " +
-      "see the plan, or --print-config for the repository contract.",
+  if (bootstrapState === undefined) {
+    throw new UsageError(
+      "runway bootstrap: --bootstrap-state is required to provision — the " +
+        "backend holding the bootstrap stack's own state, e.g. " +
+        "gs://<org>-runway-bootstrap-state (hand-made once per organisation; " +
+        "see SPEC-environment-provisioning.md). Use --dry-run to plan without one.",
+    );
+  }
+
+  return provision({
+    service: name,
+    region,
+    repository,
+    developersGroup,
+    production: productionProject !== undefined,
+    bootstrapState,
+    yes,
+  });
+};
+
+interface ProvisionOptions {
+  readonly service: string;
+  readonly region: string;
+  readonly repository?: string;
+  readonly developersGroup?: string;
+  readonly production: boolean;
+  readonly bootstrapState: string;
+  readonly yes: boolean;
+}
+
+/** Runs gcloud, returning parsed stdout — or throws with stderr attached. */
+const gcloudJson = (args: readonly string[]): Record<string, unknown> => {
+  const result = spawnSync("gcloud", [...args, "--format=json"], {
+    encoding: "utf-8",
+  });
+  if (result.status !== 0) {
+    throw new Error(`gcloud ${args.join(" ")} failed:\n${result.stderr}`);
+  }
+  const parsed: unknown = JSON.parse(result.stdout);
+  // Narrowed, not cast: a mis-shaped response must fail here, loudly, not
+  // flow onward as whatever the caller hoped for.
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`gcloud ${args.join(" ")} returned a non-object response.`);
+  }
+  return { ...parsed };
+};
+
+const strings = (value: unknown): readonly string[] =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+
+/**
+ * The production project's live IAM policy plus resolved custom roles — the
+ * audit's raw material, fetched exactly the way the integration tier does.
+ */
+const fetchProductionPolicy = (
+  project: string,
+): {
+  readonly bindings: { readonly role: string; readonly members: readonly string[] }[];
+  readonly customRolePermissions: Record<string, readonly string[]>;
+} => {
+  const policy = gcloudJson(["projects", "get-iam-policy", project]);
+  const rawBindings = Array.isArray(policy.bindings) ? policy.bindings : [];
+  const bindings = rawBindings.map((raw: unknown) => {
+    const binding: Record<string, unknown> =
+      typeof raw === "object" && raw !== null ? { ...raw } : {};
+    return {
+      role: typeof binding.role === "string" ? binding.role : "",
+      members: strings(binding.members),
+    };
+  });
+
+  const customRoles = [
+    ...new Set(bindings.map((b) => b.role).filter((r) => !r.startsWith("roles/"))),
+  ];
+  const customRolePermissions = Object.fromEntries(
+    customRoles.map((role) => {
+      const definition = gcloudJson(["iam", "roles", "describe", role]);
+      return [role, strings(definition.includedPermissions)];
+    }),
   );
+
+  return { bindings, customRolePermissions };
+};
+
+/**
+ * The wet path: preview by default, apply under `--yes`. The audit runs
+ * inside ServiceEnvironment's construction, against the live policy fetched
+ * a moment before — so an EP-06 refusal surfaces here as the program failing
+ * with the audit's full message, before any resource operation.
+ */
+const provision = async (options: ProvisionOptions): Promise<void> => {
+  const { LocalWorkspace } = await import("@pulumi/pulumi/automation");
+  const { ServiceEnvironment } = await import("@runway/environment-provisioning");
+
+  const productionPolicy = options.production
+    ? fetchProductionPolicy(`${options.service}-production`)
+    : undefined;
+
+  const program = async (): Promise<Record<string, unknown>> => {
+    const staging = new ServiceEnvironment("staging", {
+      service: options.service,
+      environment: "staging",
+      location: options.region,
+      deployableBy: {
+        humans:
+          options.developersGroup === undefined
+            ? {}
+            : { group: options.developersGroup },
+      },
+    });
+
+    const outputs: Record<string, unknown> = {
+      stagingProject: staging.project,
+      stagingStateBucket: staging.stateBucket.name,
+    };
+
+    if (productionPolicy !== undefined && options.repository !== undefined) {
+      const production = new ServiceEnvironment("production", {
+        service: options.service,
+        environment: "production",
+        location: options.region,
+        deployableBy: {
+          ci: {
+            repository: options.repository,
+            // main pushes images; version tags release them. See EP-02.
+            refs: ["refs/heads/main", "refs/tags/v*"],
+            existingPolicy: { bindings: productionPolicy.bindings },
+            customRolePermissions: productionPolicy.customRolePermissions,
+          },
+        },
+      });
+      outputs.productionProject = production.project;
+      outputs.productionStateBucket = production.stateBucket.name;
+      outputs.deployerEmail = production.federation?.deployerEmail;
+      outputs.wifProvider = production.federation?.provider.name;
+    }
+
+    return outputs;
+  };
+
+  const stack = await LocalWorkspace.createOrSelectStack(
+    { stackName: options.service, projectName: "runway-bootstrap", program },
+    {
+      projectSettings: {
+        name: "runway-bootstrap",
+        runtime: "nodejs",
+        backend: { url: options.bootstrapState },
+      },
+      // The bootstrap stack stores no secret, so the passphrase encrypts
+      // nothing and an empty one costs nothing. See the integration tier's
+      // identical reasoning.
+      envVars: { PULUMI_CONFIG_PASSPHRASE: "" },
+    },
+  );
+
+  if (!options.yes) {
+    const preview = await stack.preview();
+    process.stdout.write(`${JSON.stringify(preview.changeSummary)}\n`);
+    process.stdout.write(
+      `${completenessReport(options.production).join("\n")}\n\n` +
+        "Preview only. Run again with --yes to apply.\n",
+    );
+    return;
+  }
+
+  await stack.up({ onOutput: (line) => process.stdout.write(line) });
+  const outputs = await stack.outputs();
+  const value = (key: string): string => String(outputs[key]?.value ?? "");
+
+  const lines = [
+    "",
+    `Bootstrapped ${options.service}.`,
+    "",
+    ...completenessReport(options.production),
+  ];
+  if (options.production) {
+    lines.push(
+      "",
+      "# Repository variables for the service's workflows (Settings > Variables):",
+      `RUNWAY_WIF_PROVIDER=${value("wifProvider")}/providers/github`,
+      `RUNWAY_CI_SERVICE_ACCOUNT=${value("deployerEmail")}`,
+      `RUNWAY_PRODUCTION_STATE_BACKEND=gs://${value("productionStateBucket")}`,
+    );
+  }
+  lines.push("", `Staging state backend: gs://${value("stagingStateBucket")}`, "");
+  process.stdout.write(lines.join("\n"));
 };

@@ -29,6 +29,11 @@
   "peerDependencies": {
     "projen": "^0.103.2"
   },
+  "dependencies": {
+    "@pulumi/gcp": "9.35.1",
+    "@pulumi/pulumi": "3.259.0",
+    "@runway/environment-provisioning": "^0.1.0"
+  },
   "engines": {
     "node": ">= 22.18.0"
   },

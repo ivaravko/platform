@@ -303,3 +303,23 @@ describe("ServiceEnvironment is the unit — no environment-kind branch", () => 
     ).toThrow(/staging is deployed by people/);
   });
 });
+
+describe("staging without a developers group — EP-04 deferred, never softened", () => {
+  it("grants nothing at all, rather than falling back to an individual", async () => {
+    const env = new ServiceEnvironment("no-group", {
+      service: "checkout",
+      environment: "staging",
+      location: "europe-west1",
+      deployableBy: { humans: {} },
+    });
+    await resolve(env.project);
+
+    const created = await resourcesFor("no-group");
+    // The bucket still exists (EP-05 is unconditional); no IAM member of any
+    // kind does. Absence of a group is absence of a grant, visibly reported
+    // by bootstrap — not a quiet grant to whoever ran the command.
+    expect(created.filter((r) => r.type === BUCKET_TYPE)).toHaveLength(1);
+    expect(created.filter((r) => r.type === PROJECT_IAM_TYPE)).toHaveLength(0);
+    expect(created.filter((r) => r.type === BUCKET_IAM_TYPE)).toHaveLength(0);
+  });
+});
