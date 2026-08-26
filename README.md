@@ -5,22 +5,24 @@ security-hardened Cloud Run service, so a team's first commit is already correct
 are components with recorded opt-outs, not documentation — see [SPEC.md](SPEC.md) and
 [docs/control-mapping.md](docs/control-mapping.md) for what is enforced and how it is proven.
 
-## Install the CLI
-
-`@runway/*` is published to Artifact Registry, not npmjs.com, so npm needs the scope mapping and a
-credential once:
+## Build the CLI from source
 
 ```bash
-cat >> ~/.npmrc <<'EOF'
-@runway:registry=https://europe-west1-npm.pkg.dev/enduring-badge-506610-u9/runway/
-//europe-west1-npm.pkg.dev/enduring-badge-506610-u9/runway/:always-auth=true
-EOF
-npx google-artifactregistry-auth --credential-config=$HOME/.npmrc
-
-npm install -g @runway/cli
+git clone git@github.com:ivaravko/platform.git
+cd platform
+npm install
+npm run compile
+npm link --workspace @runway/cli   # puts `runway` on your PATH
 ```
 
 ## Create a service
+
+The generated repository resolves `@runway/*` from Artifact Registry — its committed `.npmrc`
+carries the scope mapping, you supply the credential once:
+
+```bash
+npx google-artifactregistry-auth --credential-config=$HOME/.npmrc
+```
 
 ```bash
 runway new <name> --region europe-west1
