@@ -48,9 +48,13 @@ afterAll(() => {
 });
 
 describe("ci workflow", () => {
-  it("emits exactly one file under .github/workflows", () => {
+  it("emits exactly two files under .github/workflows", () => {
+    // build.yml gates every PR; release.yml deploys production from a tag.
+    // A second workflow rather than a job in the first, because its trigger,
+    // its permissions and its failure meaning are all different.
     expect(readdirSync(join(outdir, ".github/workflows"))).toEqual([
       "build.yml",
+      "release.yml",
     ]);
   });
 

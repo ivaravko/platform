@@ -63,9 +63,11 @@ describe("scaffold file tree", () => {
       // into the image the Dockerfile builds.
       ".dockerignore",
       ".gitattributes",
-      // The only file projen's GitHub integration is allowed to add; the
-      // release, upgrade, PR-lint, mergify and PR-template defaults are off.
+      // The PR gate, and the only file projen's GitHub integration is allowed
+      // to add; the upgrade, PR-lint, mergify and PR-template defaults are off.
       ".github/workflows/build.yml",
+      // The only route to production: a tag push, or a dispatch on a tag ref.
+      ".github/workflows/release.yml",
       ".gitignore",
       ".npmignore",
       ".npmrc",

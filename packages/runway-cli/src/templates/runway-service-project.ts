@@ -221,6 +221,7 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
 
     this.addStackConfig(options.region);
     this.addContainerImage(options.region);
+    this.addReleaseWorkflow(options.region);
     this.addClientBuild();
     this.testTask.exec("vitest run", { receiveArgs: true });
     this.addLintTasks();
@@ -378,6 +379,144 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
           run: [
             `printf '%s' '${token}' | docker login -u oauth2accesstoken --password-stdin ${region}-docker.pkg.dev`,
             'docker push "$IMAGE:sha-$GITHUB_SHA"',
+          ].join("\n"),
+        },
+      ],
+    });
+  }
+
+  /**
+   * The only route to production: SPEC-release-path.md, generated.
+   *
+   * A second workflow rather than a job in `build.yml`, because its trigger,
+   * its permissions and its failure meaning are all different — a red build
+   * means the code is wrong; a red release means production did not change.
+   *
+   * Two triggers, one path. A pushed `v*` tag is a release; a dispatch on an
+   * existing tag's ref is a rollback (RP-06) — the same run, re-asked-for,
+   * with the asking actor in the log. Dispatching on a branch dies at the
+   * first step, and would die at Google's door regardless.
+   *
+   * Unlike the `package` job this one does not skip when the bootstrap
+   * variables are missing: a pushed tag is an explicit release request, and a
+   * release that silently does nothing is the swallowed error RP-03 warns
+   * about. It goes red, naming what to set.
+   */
+  private addReleaseWorkflow(region: string): void {
+    if (this.github === undefined) {
+      return;
+    }
+
+    const staging = `${region}-docker.pkg.dev/${this.name}-staging/${this.name}/${this.name}`;
+    const production = `${region}-docker.pkg.dev/${this.name}-production/${this.name}/${this.name}`;
+    const npmHost = RUNWAY_REGISTRY.replace(/^https:/, "");
+
+    const workflow = new github.GithubWorkflow(this.github, "release");
+    workflow.on({ push: { tags: ["v*"] }, workflowDispatch: {} });
+
+    workflow.addJob("release", {
+      runsOn: ["ubuntu-latest"],
+      permissions: {
+        contents: github.workflows.JobPermission.READ,
+        idToken: github.workflows.JobPermission.WRITE,
+      },
+      env: {
+        STAGING_IMAGE: staging,
+        PRODUCTION_IMAGE: production,
+      },
+      steps: [
+        {
+          name: "Refuse a non-tag ref",
+          if: "github.ref_type != 'tag'",
+          run: [
+            'echo "release runs only on a tag ref. To roll back, dispatch on the tag itself:" >&2',
+            'echo "  gh workflow run release.yml --ref v1.2.3" >&2',
+            "exit 1",
+          ].join("\n"),
+        },
+        {
+          name: "Refuse to run unbootstrapped",
+          if: "vars.RUNWAY_WIF_PROVIDER == '' || vars.RUNWAY_CI_SERVICE_ACCOUNT == '' || vars.RUNWAY_PRODUCTION_STATE_BACKEND == ''",
+          run: [
+            'echo "Not bootstrapped: set the repository variables RUNWAY_WIF_PROVIDER," >&2',
+            'echo "RUNWAY_CI_SERVICE_ACCOUNT and RUNWAY_PRODUCTION_STATE_BACKEND." >&2',
+            "exit 1",
+          ].join("\n"),
+        },
+        { uses: "actions/checkout@v4" },
+        {
+          id: "auth",
+          uses: "google-github-actions/auth@v2",
+          with: {
+            workload_identity_provider: "${{ vars.RUNWAY_WIF_PROVIDER }}",
+            service_account: "${{ vars.RUNWAY_CI_SERVICE_ACCOUNT }}",
+            token_format: "access_token",
+          },
+        },
+        {
+          id: "resolve",
+          name: "Resolve the tagged commit to a digest",
+          // RP-02 and RP-03. The digest is the image build.yml pushed for
+          // this exact commit — resolving the git tag's own name would need
+          // something to have rebuilt, and promotion is an artifact moving.
+          // `describe` fails non-zero on a missing image, which fails the
+          // release before any deploy step; the emptiness check is belt and
+          // braces, because RP-03 is the control the spec says will be
+          // skipped.
+          run: [
+            'digest="$(gcloud artifacts docker images describe \\',
+            "  \"$STAGING_IMAGE:sha-$GITHUB_SHA\" --format='value(image_summary.digest)')\"",
+            'test -n "$digest"',
+            'echo "$GITHUB_REF_NAME resolves to $digest"',
+            'echo "digest=$digest" >> "$GITHUB_OUTPUT"',
+          ].join("\n"),
+        },
+        {
+          name: "Promote the artifact into the production registry",
+          // Each environment pulls from its own registry, so the digest must
+          // exist in production's before Cloud Run is asked to pull it. A
+          // push re-uploads the identical manifest, which preserves the
+          // digest; the final describe proves it rather than assumes it. The
+          // git tag becomes the registry-side name for the digest, so "what
+          // shipped" is answerable from the production registry too.
+          env: { DIGEST: "${{ steps.resolve.outputs.digest }}" },
+          run: [
+            `printf '%s' '\${{ steps.auth.outputs.access_token }}' | docker login -u oauth2accesstoken --password-stdin ${region}-docker.pkg.dev`,
+            'docker pull "$STAGING_IMAGE@$DIGEST"',
+            'docker tag "$STAGING_IMAGE@$DIGEST" "$PRODUCTION_IMAGE:$GITHUB_REF_NAME"',
+            'docker push "$PRODUCTION_IMAGE:$GITHUB_REF_NAME"',
+            'gcloud artifacts docker images describe "$PRODUCTION_IMAGE@$DIGEST" --format=\'value(image_summary.digest)\'',
+          ].join("\n"),
+        },
+        {
+          uses: "actions/setup-node@v4",
+          with: { "node-version": NODE_VERSION, cache: "npm" },
+        },
+        {
+          name: "Build the infra program",
+          // Pulumi runs `main: lib/index.js`; only infra needs compiling.
+          run: [
+            `printf '%s:_authToken=%s\\n' '${npmHost}' '\${{ steps.auth.outputs.access_token }}' > "$RUNNER_TEMP/npmrc"`,
+            'npm ci --userconfig "$RUNNER_TEMP/npmrc"',
+            "npm run compile:infra",
+          ].join("\n"),
+        },
+        {
+          name: "Deploy the digest",
+          env: {
+            DIGEST: "${{ steps.resolve.outputs.digest }}",
+            // Config here holds no secret; stacks initialised with the
+            // default passphrase provider and no passphrase deploy as-is.
+            PULUMI_CONFIG_PASSPHRASE: "",
+          },
+          run: [
+            "curl -fsSL https://get.pulumi.com | sh",
+            'export PATH="$HOME/.pulumi/bin:$PATH"',
+            "pulumi login \"${{ vars.RUNWAY_PRODUCTION_STATE_BACKEND }}\"",
+            "cd infra",
+            "pulumi stack select production",
+            'pulumi config set imageDigest "$DIGEST"',
+            "pulumi up --yes",
           ].join("\n"),
         },
       ],
@@ -762,6 +901,21 @@ const renderReadme = (name: string): string =>
     "authenticates by Workload Identity Federation and is **skipped** until two",
     "repository variables exist, which `runway bootstrap` will tell you to set:",
     "`RUNWAY_WIF_PROVIDER` and `RUNWAY_CI_SERVICE_ACCOUNT`.",
+    "",
+    "## Releasing",
+    "",
+    "```bash",
+    "git tag v1.4.0 && git push origin v1.4.0   # deploy to production",
+    "gh workflow run release.yml --ref v1.3.0   # roll back: re-run an old release",
+    "```",
+    "",
+    "`release.yml` resolves the tagged commit's image to a digest, copies it into",
+    "the production registry, and deploys that digest — never a tag. There is no",
+    "local command that deploys production, deliberately: attempting one fails at",
+    "Google's door, not at a policy. The workflow goes **red** until bootstrap's",
+    "variables exist — alongside the two above it needs",
+    "`RUNWAY_PRODUCTION_STATE_BACKEND`, the Pulumi backend URL for the production",
+    "stack.",
     "",
     "## Where the guardrails live",
     "",
