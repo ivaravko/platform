@@ -96,10 +96,15 @@ moment ago.
 The resolution is an explicit two-phase first apply:
 
 ```bash
-pulumi up --target '**SecureArtifactRepository**' --target-dependents   # registry only
+pulumi up --target '**SecureArtifactRepository**'   # registry only; its own deps come implicitly
 # build and push the image
 pulumi up                                                              # everything else
 ```
+
+**No `--target-dependents`** — corrected 2026-08-26 by the first real two-phase apply: the Cloud
+Run service *depends on* the registry, so "dependents" drags the whole stack into phase one and
+errors on everything not targeted. A target's own dependencies are included implicitly, which is
+all phase one needs.
 
 **Only the first apply per environment.** Every subsequent deploy is a single `pulumi up`, because
 the registry already exists.

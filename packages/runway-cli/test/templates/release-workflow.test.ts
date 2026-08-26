@@ -175,7 +175,11 @@ describe("release workflow: promotion (RP-02, RP-03)", () => {
     expect(copy).toBeLessThan(deploy);
 
     const step = steps[registry];
-    expect(step.run).toContain("--target-dependents");
+    // Deliberately no --target-dependents: the service depends on the
+    // registry, so "dependents" would drag the whole stack into phase one —
+    // observed on the first real two-phase apply, not theorised.
+    expect(step.run).toContain("--target '**SecureArtifactRepository**' --yes");
+    expect(step.run).not.toContain("--target-dependents");
     expect(step.run).toMatch(/stack select production \|\| pulumi stack init production/);
   });
 });

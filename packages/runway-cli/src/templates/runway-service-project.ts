@@ -520,7 +520,12 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
             "cd infra",
             "pulumi stack select production || pulumi stack init production",
             'pulumi config set imageDigest "$DIGEST"',
-            "pulumi up --target '**SecureArtifactRepository**' --target-dependents --yes",
+            // No --target-dependents, learned from the first real two-phase
+            // apply: the Cloud Run service *depends on* the registry, so
+            // "dependents" drags the whole stack into phase one and errors on
+            // everything else that was not targeted. A target's own
+            // dependencies come along implicitly, which is all phase one needs.
+            "pulumi up --target '**SecureArtifactRepository**' --yes",
           ].join("\n"),
         },
         {
