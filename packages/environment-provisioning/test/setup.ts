@@ -44,10 +44,41 @@ void pulumi.runtime.setMocks({
       props: args.inputs as Record<string, unknown>,
     }),
     `${args.name}_id`),
-    state: args.inputs,
+    state: { ...args.inputs, ...computedOutputs(args) },
   }),
   call: (args: pulumi.runtime.MockCallArgs) => args.inputs,
 });
+
+/**
+ * Provider-computed outputs the mock must stand in for, mirroring the shapes
+ * the GCP provider actually returns. With only `args.inputs`, anything the
+ * provider derives resolves to `undefined` — and an assertion on it would
+ * pass for the wrong reason.
+ */
+const computedOutputs = (
+  args: pulumi.runtime.MockResourceArgs,
+): Record<string, unknown> => {
+  const inputs = args.inputs as Record<string, unknown>;
+  switch (args.type) {
+    case "gcp:iam/workloadIdentityPool:WorkloadIdentityPool":
+      // The full resource name, which principalSet members embed.
+      return {
+        name: `projects/000000000000/locations/global/workloadIdentityPools/${String(
+          inputs.workloadIdentityPoolId,
+        )}`,
+      };
+    case "gcp:serviceaccount/account:Account": {
+      const email = `${String(inputs.accountId)}@${String(inputs.project)}.iam.gserviceaccount.com`;
+      return {
+        email,
+        member: `serviceAccount:${email}`,
+        name: `projects/${String(inputs.project)}/serviceAccounts/${email}`,
+      };
+    }
+    default:
+      return {};
+  }
+};
 
 /**
  * Resolves an Output to its value. Success only: `apply` has no rejection

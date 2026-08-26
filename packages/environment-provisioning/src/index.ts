@@ -12,6 +12,18 @@ export type {
   ServiceEnvironmentArgs,
 } from "./service-environment";
 
+export {
+  WorkloadIdentity,
+  attributeConditionAdmits,
+  buildAttributeCondition,
+} from "./workload-identity";
+export type { WorkloadIdentityArgs } from "./workload-identity";
+
+export {
+  checkNoServiceAccountKey,
+  noServiceAccountKeys,
+} from "./policy/no-service-account-keys";
+
 export { auditProductionPolicy } from "./audit";
 export type {
   AuditProductionPolicyOptions,

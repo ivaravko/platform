@@ -593,7 +593,9 @@ const environmentProvisioning = new typescript.TypeScriptProject({
   name: "@runway/environment-provisioning",
   description:
     "The identity boundary for GCP services: production is deployable precisely by the identity localhost does not have.",
-  peerDeps: [PULUMI, PULUMI_GCP],
+  // PULUMI_POLICY for the EP-03 rule the bootstrap stack enforces — a peer
+  // for the same no-second-copy reason as the others.
+  peerDeps: [PULUMI, PULUMI_GCP, PULUMI_POLICY],
   devDeps: [VITEST, VITEST_COVERAGE],
   tsconfig: { compilerOptions: { ...LANGUAGE_LEVEL } },
 });
