@@ -578,9 +578,13 @@ new TextFile(gcpComponents, "policy/index.js", {
  * module whose whole purpose is that a developer holding every credential they
  * legitimately possess still cannot deploy to production.
  *
- * No @pulumi/* peers yet, deliberately: E1 (the deploy permission set) is pure
- * logic. E3 introduces `ServiceEnvironment`, and the provider peers arrive
- * with it — adding them now would pin versions nothing exercises.
+ * @pulumi/* as peers, not deps, for the same reason as gcp-components: two
+ * copies of @pulumi/pulumi in one program break resource registration, and a
+ * published library that bundles its own copy makes that the consumer's
+ * problem. projen pins them as devDeps too, so tests still resolve them.
+ * (They arrived with E3's `ServiceEnvironment` — E1 and E2 were pure logic,
+ * which is also what keeps the audit structurally unable to write IAM: the
+ * audit path itself still imports nothing with a network client.)
  */
 const environmentProvisioning = new typescript.TypeScriptProject({
   ...common,
@@ -589,6 +593,7 @@ const environmentProvisioning = new typescript.TypeScriptProject({
   name: "@runway/environment-provisioning",
   description:
     "The identity boundary for GCP services: production is deployable precisely by the identity localhost does not have.",
+  peerDeps: [PULUMI, PULUMI_GCP],
   devDeps: [VITEST, VITEST_COVERAGE],
   tsconfig: { compilerOptions: { ...LANGUAGE_LEVEL } },
 });

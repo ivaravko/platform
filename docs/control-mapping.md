@@ -82,6 +82,8 @@ all seven must be present.
 
 | Control | Requirement | Source | Enforced in | Tests | Policy rule |
 |---|---|---|---|---|---|
+| EP-04 | Staging deploy is granted to a developers group, never an individual — a `user:` principal is rejected at construction | [IAM: using IAM securely](https://docs.cloud.google.com/iam/docs/using-iam-securely) | `ServiceEnvironment` | `EP-04: …` | — |
+| EP-05 | The state bucket is versioned and access-controlled per environment; two environments never share one | [Cloud Storage: object versioning](https://docs.cloud.google.com/storage/docs/object-versioning), [public access prevention](https://docs.cloud.google.com/storage/docs/public-access-prevention) | `ServiceEnvironment` | `EP-05: …` | — |
 | EP-06 | Bootstrap fails if the adopted production project already grants a deploy-capable role to any human principal, listing every offending binding | [Cloud Run: IAM roles](https://docs.cloud.google.com/run/docs/reference/iam/roles), [IAM: granting and revoking access](https://docs.cloud.google.com/iam/docs/granting-changing-revoking-access) | `auditProductionPolicy` | `EP-06: …` | — |
 
 **EP-06 refuses and never repairs.** The audit is structurally incapable of a write — the package

@@ -16,10 +16,16 @@
     "projen": "projen"
   },
   "devDependencies": {
+    "@pulumi/gcp": "9.35.1",
+    "@pulumi/pulumi": "3.259.0",
     "@types/node": "^22",
     "@vitest/coverage-v8": "4.1.11",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
+  },
+  "peerDependencies": {
+    "@pulumi/gcp": "9.35.1",
+    "@pulumi/pulumi": "3.259.0"
   },
   "engines": {
     "node": ">= 22.18.0"

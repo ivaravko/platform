@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { auditProductionPolicy, type IamPolicy } from "../src";
@@ -219,14 +219,22 @@ describe("EP-06: the module cannot write IAM — asserted structurally", () => {
     expect(pkg.dependencies ?? {}).toEqual({});
   });
 
-  it("imports nothing outside its own source tree", () => {
+  it("the audit's import closure reaches no external module", () => {
+    // Scoped to the audit path, not all of src: `ServiceEnvironment` imports
+    // @pulumi/* legitimately (as peers, still not runtime deps). The claim
+    // here is narrower and load-bearing — nothing `auditProductionPolicy`
+    // can reach has a network client, so the audit cannot write what it
+    // reads, whatever its code says.
     const src = join(packageRoot, "src");
-    for (const file of readdirSync(src)) {
+    const closure = ["audit.ts"];
+    for (const file of closure) {
       const specifiers = [
         ...readFileSync(join(src, file), "utf-8").matchAll(/from "([^"]+)"/g),
       ].map((match) => match[1]);
       for (const specifier of specifiers) {
         expect(specifier, `${file} imports ${specifier}`).toMatch(/^\.\//);
+        const imported = `${specifier.slice(2)}.ts`;
+        if (!closure.includes(imported)) closure.push(imported);
       }
     }
   });
