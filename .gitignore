@@ -40,6 +40,7 @@ jspm_packages/
 test-integration/fixtures/lib/
 test-integration/fixtures/*/Pulumi.*.yaml
 !/.github/workflows/security.yml
+!/.github/workflows/integration.yml
 !/.npmrc
 !/.oxlintrc.json
 dist/

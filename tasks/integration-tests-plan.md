@@ -261,7 +261,14 @@ run · failure injection demonstrated · **human review before CI.**
 
 ### Phase 4: CI
 
-- [ ] **T11: Enable the remaining API(s) on the sandbox** — *mostly done already*
+- [x] **T11: Enable the remaining API(s) on the sandbox** — **done 2026-08-26.** Read back
+  per-API by exact match, each `gcloud services list --enabled --project enduring-badge-506610-u9
+  --filter='config.name=<api>' --format='value(config.name)'` echoing the api name:
+  `iam.googleapis.com` already enabled, `compute.googleapis.com` already enabled (2026-08-25),
+  `cloudresourcemanager.googleapis.com` **returned empty — the one genuinely outstanding — and was
+  enabled**, then read back successfully. The sibling non-empty reads are what distinguish "not
+  enabled" from "the command failed". `binaryauthorization.googleapis.com` stays un-enabled while
+  CR-09 is out of scope.
   - **Description:** ~~`iam`, `cloudresourcemanager`, `binaryauthorization`~~ — **re-scoped after
     reading the state rather than trusting the document.** `compute.googleapis.com` was enabled
     2026-08-25 on explicit request (a T2 finding), and `iam.googleapis.com` was found **already
@@ -278,7 +285,12 @@ run · failure injection demonstrated · **human review before CI.**
   - **Mutates a real project.** Reversible, and does not decide
     [SPEC.md OQ4](../SPEC.md#open-questions) — enabling BinAuthz's API is not defaulting it on.
 
-- [ ] **T12: `integration` workflow**
+- [x] **T12: `integration` workflow** — **done 2026-08-26**, with the contract asserted in
+  `test/ci.test.ts`: schedule + dispatch and nothing else, federation-only auth, no literal
+  project id (the sandbox arrives through `vars.RUNWAY_SANDBOX_PROJECT` and is held to
+  `assertSandbox()`), and an `if: always()` emptiness verification. One caveat, recorded rather
+  than hidden: the job is **inert until this repository's federation exists** — see OQ1 below —
+  so "one `workflow_dispatch` run green" and the ten green nights are still ahead.
   - **Description:** `root.github.addWorkflow("integration")` in `.projenrc.ts`, matching the
     existing `security` workflow. Nightly schedule + `workflow_dispatch`; **no `pull_request`**.
     Teardown with `if: always()`.
@@ -314,8 +326,11 @@ Inherits the repo bar, plus:
 
 ## Open Questions
 
-1. **Interim CI credential.** `environment-provisioning` (EP-03) owns WIF and is unbuilt. Run T12
-   on `workflow_dispatch` with a local credential until it lands, or hold T12 entirely?
+1. ~~Interim CI credential.~~ **Resolved 2026-08-26: neither — the workflow ships inert.**
+   `environment-provisioning` is built but its federation exists nowhere in reality (plan OQ2
+   resolved bootstrap to preview-only), so T12 gates its job on `vars.RUNWAY_PLATFORM_WIF_PROVIDER`
+   and skips until someone provisions federation for this repository and sets the variables — the
+   same forward-contract pattern as the scaffold's package job. No local credential enters CI.
    Recommendation: ship T12 on `workflow_dispatch`, since T1–T11 deliver value without a schedule.
 2. **Ten green nights is a guess** — a stand-in for "stable enough to trust". If pre-release is the
    only moment this tier's verdict is acted on, a shorter bar is defensible.

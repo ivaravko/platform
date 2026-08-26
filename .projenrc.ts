@@ -459,6 +459,69 @@ security.addJob("codeql", {
 });
 
 /**
+ * The integration tier's workflow (T12): nightly and on demand, never on a
+ * pull request — the PR gate stays credential-free and offline, and the
+ * isolation is the trigger set itself rather than a filter inside a shared
+ * workflow.
+ *
+ * Inert until federation for this repository exists, the same forward
+ * contract as the scaffold's package job: skipped, not red, while the
+ * repository variables are unset. The sandbox project id reaches the run
+ * through a variable and is then held to `assertSandbox()`, which rejects
+ * anything but the one designated project — so the variable cannot point the
+ * tier somewhere else, and no project id is baked into `.github/`.
+ */
+const integrationWorkflow = root.github.addWorkflow("integration");
+integrationWorkflow.on({
+  // 03:17 UTC: off the top of the hour, where GitHub's cron load spikes and
+  // scheduled runs are most often delayed or dropped.
+  schedule: [{ cron: "17 3 * * *" }],
+  workflowDispatch: {},
+});
+
+integrationWorkflow.addJob("integration", {
+  runsOn: ["ubuntu-latest"],
+  permissions: {
+    contents: JobPermission.READ,
+    // What lets google-github-actions/auth mint a federated credential — the
+    // only kind this repo's Never list permits. No stored secret exists.
+    idToken: JobPermission.WRITE,
+  },
+  if: "${{ vars.RUNWAY_PLATFORM_WIF_PROVIDER != '' }}",
+  env: { GOOGLE_CLOUD_PROJECT: "${{ vars.RUNWAY_SANDBOX_PROJECT }}" },
+  steps: [
+    checkout,
+    {
+      name: "Authenticate to Google Cloud",
+      uses: "google-github-actions/auth@v2",
+      with: {
+        workload_identity_provider: "${{ vars.RUNWAY_PLATFORM_WIF_PROVIDER }}",
+        service_account: "${{ vars.RUNWAY_PLATFORM_CI_SERVICE_ACCOUNT }}",
+      },
+    },
+    {
+      name: "Setup Node.js",
+      uses: "actions/setup-node@v4",
+      with: { "node-version": NODE_VERSION, cache: "npm" },
+    },
+    {
+      name: "Install Pulumi",
+      run: 'curl -fsSL https://get.pulumi.com | sh && echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"',
+    },
+    { name: "Install dependencies", run: "npm ci" },
+    { name: "Integration tiers", run: "npm run test:integration" },
+    {
+      // `test:integration` ends with this same task, but a mid-tier crash
+      // never reaches it — and an unverified sandbox after a failed run is
+      // exactly when a leak is likeliest.
+      name: "Verify the sandbox is empty",
+      if: "always()",
+      run: "npm run test:integration:verify",
+    },
+  ],
+});
+
+/**
  * The Pulumi component library. Declared before runway-cli in the capability
  * map: `runway new` is only worth shipping if the repo it emits deploys.
  */

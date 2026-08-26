@@ -231,16 +231,16 @@ Left unchecked when the T-series landed. Folded in here so it is not carried ind
 "nearly done".
 
 **Acceptance criteria**
-- [ ] **T11**: the remaining API(s) enabled on the sandbox, recorded per-API by exact match — an
+- [x] **T11**: the remaining API(s) enabled on the sandbox, recorded per-API by exact match — an
       empty `grep` cannot distinguish "not enabled" from "the command failed", which has already
       produced one wrong claim in this repo
-- [ ] **T12**: an `integration` workflow that runs the gated tier, separately from the PR gate
-- [ ] **The PR gate stays credential-free and offline** — the integration tier never runs there
+- [x] **T12**: an `integration` workflow that runs the gated tier, separately from the PR gate
+- [x] **The PR gate stays credential-free and offline** — the integration tier never runs there
 
 **Verification**
-- [ ] The workflow is parsed and asserted structurally, as `ci-workflow.test.ts` already does
-- [ ] No literal credential, project id or token appears anywhere in `.github/`
-- [ ] Failure injection demonstrated at least once in the tier (T10 already does this)
+- [x] The workflow is parsed and asserted structurally, as `ci-workflow.test.ts` already does
+- [x] No literal credential, project id or token appears anywhere in `.github/`
+- [x] Failure injection demonstrated at least once in the tier (T10 already does this)
 
 **Dependencies:** None
 **Files:** `.projenrc.ts`, `.github/workflows/`, `test/`, `tasks/integration-tests-plan.md`
