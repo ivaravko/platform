@@ -7,6 +7,7 @@ export type { DeployPermission, RoleGrant } from "./roles";
 
 export { ServiceEnvironment } from "./service-environment";
 export type {
+  CiDeployer,
   DeployableBy,
   HumanDeployers,
   ServiceEnvironmentArgs,

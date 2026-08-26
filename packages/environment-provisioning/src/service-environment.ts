@@ -1,5 +1,7 @@
 import * as gcp from "@pulumi/gcp";
 import * as pulumi from "@pulumi/pulumi";
+import { auditProductionPolicy, type IamPolicy } from "./audit";
+import { WorkloadIdentity } from "./workload-identity";
 
 /**
  * One environment of one service: an adopted project, its deploy IAM, and its
@@ -16,16 +18,42 @@ export interface HumanDeployers {
 }
 
 /**
+ * CI deploys here, by federation: the identity localhost does not have.
+ *
+ * No opt-out lives in this type, deliberately. Unlike `publicAccess` there
+ * is no acceptable form of a human production deploy, so there is no field
+ * to supply one through.
+ */
+export interface CiDeployer {
+  /** The one GitHub repository allowed to deploy, as "org/repo". */
+  readonly repository: string;
+
+  /** The one ref allowed to deploy; a trailing `*` names a prefix. */
+  readonly ref: string;
+
+  /**
+   * The adopted project's **current** IAM policy, audited before a single
+   * resource is built (EP-06). If it already grants a deploy-capable role to
+   * a human, construction refuses with the audit's full message — bootstrap
+   * fails rather than proceeding onto a compromised project.
+   */
+  readonly existingPolicy: IamPolicy;
+
+  /** Resolved permissions for custom roles in `existingPolicy`, if any. */
+  readonly customRolePermissions?: Readonly<Record<string, readonly string[]>>;
+}
+
+/**
  * Who may deploy to this environment.
  *
- * One arm today, deliberately: staging is deployed by humans, and production
- * accepts only a federated CI identity — an arm E4 and E5 add. Until then a
- * `production` environment is unconstructible, loudly, rather than
- * constructible with a softer boundary than it will have.
+ * The discriminated union is the boundary: staging is deployed by people,
+ * production only by the federated CI identity. There is no variant of this
+ * type that grants a human deploy access to production — making that a type
+ * error rather than a review comment is the point.
  */
-export type DeployableBy = {
-  readonly humans: HumanDeployers;
-};
+export type DeployableBy =
+  | { readonly humans: HumanDeployers }
+  | { readonly ci: CiDeployer };
 
 export interface ServiceEnvironmentArgs {
   /** Service this environment belongs to, e.g. "checkout". */
@@ -76,26 +104,57 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
   /** Where this environment's Pulumi state lives. Versioned; never shared. */
   public readonly stateBucket: gcp.storage.Bucket;
 
-  /** The deploy grant to the deployers group (EP-04). */
+  /** The deploy grant: the group for staging, the deployer SA for production. */
   public readonly deployGrant: gcp.projects.IAMMember;
 
   /** The deployers' access to this environment's state, on the bucket only. */
   public readonly stateAccessGrant: gcp.storage.BucketIAMMember;
+
+  /** Production's federated identity (EP-02, EP-03). Absent for staging. */
+  public readonly federation?: WorkloadIdentity;
 
   constructor(
     name: string,
     args: ServiceEnvironmentArgs,
     opts?: pulumi.ComponentResourceOptions,
   ) {
-    if (args.environment === "production") {
+    // The cross-checks, before any resource exists. The type steers; these
+    // enforce — because a caller can arrive here through `any`, and the
+    // boundary must not depend on the compiler having been consulted.
+    if ("humans" in args.deployableBy && args.environment === "production") {
       throw new Error(
         `ServiceEnvironment: production has no human variant — building it ` +
           `deployable by people would leave EP-01 unenforced, and a developer ` +
           `could deploy to production by hand. Production deploys only by the ` +
-          `federated CI identity, which E4/E5 introduce.`,
+          `federated CI identity.`,
       );
     }
-    const member = groupMember(args.deployableBy.humans.group);
+    if ("ci" in args.deployableBy && args.environment === "staging") {
+      throw new Error(
+        `ServiceEnvironment: staging is deployed by people, from their own ` +
+          `credentials, so the audit log names a person (RP-04). A ` +
+          `CI-deployed staging is a second identity model nothing specifies.`,
+      );
+    }
+
+    const deployable = args.deployableBy;
+
+    // Both refusals fire before any resource exists: the group validation
+    // (EP-04), and EP-06's audit of the adopted project — refuse rather than
+    // proceed onto a compromised project. The audit's message is the error;
+    // it carries the whole decision.
+    if ("humans" in deployable) {
+      groupMember(deployable.humans.group);
+    } else {
+      const audit = auditProductionPolicy({
+        projectId: `${args.service}-${args.environment}`,
+        policy: deployable.ci.existingPolicy,
+        customRolePermissions: deployable.ci.customRolePermissions,
+      });
+      if (!audit.compliant) {
+        throw new Error(audit.refusal);
+      }
+    }
 
     super("runway:environment:ServiceEnvironment", name, {}, opts);
 
@@ -123,12 +182,41 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
       { parent: this },
     );
 
-    // EP-04. roles/run.developer, not run.admin: deploying is create and
-    // update; rewriting the service's IAM is escalation, and nothing about
-    // deploying to staging needs it.
+    let deployMember: pulumi.Input<string>;
+    let deployRole: string;
+    if ("humans" in deployable) {
+      // EP-04. roles/run.developer, not run.admin: deploying is create and
+      // update; rewriting the service's IAM is escalation, and nothing about
+      // deploying to staging needs it.
+      deployMember = groupMember(deployable.humans.group);
+      deployRole = "roles/run.developer";
+    } else {
+      const ci = deployable.ci;
+
+      // EP-02, EP-03: the federated identity, composed here so production
+      // cannot exist without it.
+      this.federation = new WorkloadIdentity(
+        `${name}-wif`,
+        {
+          service: args.service,
+          project,
+          repository: ci.repository,
+          ref: ci.ref,
+        },
+        { parent: this },
+      );
+
+      // run.admin, unlike staging's run.developer: the CI deploy runs the
+      // whole infra program, which manages the service's own IAM (invoker
+      // bindings on a justified public service). A person never holds this —
+      // that is EP-01, enforced above and audited before it.
+      deployMember = pulumi.interpolate`serviceAccount:${this.federation.deployerEmail}`;
+      deployRole = "roles/run.admin";
+    }
+
     this.deployGrant = new gcp.projects.IAMMember(
       `${name}-deploy`,
-      { project, role: "roles/run.developer", member },
+      { project, role: deployRole, member: deployMember },
       { parent: this },
     );
 
@@ -136,7 +224,11 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
     // write this environment's state and nothing else's.
     this.stateAccessGrant = new gcp.storage.BucketIAMMember(
       `${name}-state-access`,
-      { bucket: this.stateBucket.name, role: "roles/storage.objectAdmin", member },
+      {
+        bucket: this.stateBucket.name,
+        role: "roles/storage.objectAdmin",
+        member: deployMember,
+      },
       { parent: this },
     );
 
@@ -145,6 +237,7 @@ export class ServiceEnvironment extends pulumi.ComponentResource {
       stateBucket: this.stateBucket,
       deployGrant: this.deployGrant,
       stateAccessGrant: this.stateAccessGrant,
+      federation: this.federation,
     });
   }
 }
