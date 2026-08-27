@@ -25,6 +25,10 @@ const WORKSPACE_GLOB = "packages/*";
  * different bytes under the same number -- and every generated repo pins
  * whatever ships first. 0.1.0 rather than 0.0.0: real, pre-1.0, expect change.
  */
+// 0.1.6: generated build.yml gains a parallel `audit` job -- npm audit
+// --audit-level=high from the committed lockfile, no install, no credential.
+// Part of what compensates for the generated .npmrc's legacy-peer-deps.
+//
 // 0.1.2: staging works without production -- a CI image-publisher identity
 // hosted in the staging project (registry writer, main only, no deploy
 // verb), and the build job authenticates npm ci by federation before
@@ -33,7 +37,7 @@ const WORKSPACE_GLOB = "packages/*";
 // 0.1.1: the scaffold that emits Dockerfile, release.yml and the package
 // job, published-version deps in generated repos, and runway bootstrap's
 // provisioning path.
-const PACKAGE_VERSION = "0.1.5";
+const PACKAGE_VERSION = "0.1.6";
 const REGISTRY =
   "https://europe-west1-npm.pkg.dev/enduring-badge-506610-u9/runway/";
 
