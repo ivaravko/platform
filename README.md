@@ -41,6 +41,9 @@ A complete service produced by this flow, end to end:
 [ivaravko/first01](https://github.com/ivaravko/first01) — scaffolded, provisioned, CI building and
 pushing its images by federation, and deployed to staging.
 
+Day-to-day life inside the generated repository — the dev loop, the PR gate, deploying staging
+yourself, and why production 403s you — is [docs/developer-guide.md](docs/developer-guide.md).
+
 ## Provision its environments
 
 Two things are hand-made before bootstrap can run — the CLI adopts, it never creates:
