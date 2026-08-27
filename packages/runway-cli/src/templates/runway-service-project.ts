@@ -333,6 +333,7 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
     this.addStackConfig(options.region);
     this.addProductionImageGuard();
     this.addContainerImage(options.region);
+    this.addAuditJob();
     this.addReleaseWorkflow(options.region);
     this.addClientBuild();
     this.addDevTask();
@@ -542,6 +543,44 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
             'docker push "$IMAGE:sha-$GITHUB_SHA"',
           ].join("\n"),
         },
+      ],
+    });
+  }
+
+  /**
+   * Dependency audit as its own job in the build workflow, not a step in the
+   * build task: `npm audit` needs the registry's advisory database, and the
+   * build task must stay runnable offline -- the build-out test tier depends
+   * on that. A job rather than a third workflow because its triggers are the
+   * build's own; only its failure meaning differs, and a separate job keeps
+   * that signal its own red X.
+   *
+   * The generated `.npmrc` sets legacy-peer-deps, which disables npm's own
+   * compatibility checking repo-wide. Auditing in CI is part of what
+   * compensates -- the same trade the platform repo makes for itself.
+   *
+   * No install and no registry auth: `npm audit` reads the committed lockfile
+   * and queries the default registry's advisory endpoint, so the @runway
+   * scope's authenticated registry is never contacted and the job runs on
+   * fork PRs too. --audit-level=high so a low-severity advisory in a dev
+   * dependency does not block every pull request.
+   */
+  private addAuditJob(): void {
+    const build = this.github?.tryFindWorkflow("build");
+    if (build === undefined) {
+      throw new Error("the build workflow is required: the audit job attaches to it");
+    }
+    build.addJob("audit", {
+      runsOn: ["ubuntu-latest"],
+      permissions: { contents: github.workflows.JobPermission.READ },
+      steps: [
+        { name: "Checkout", uses: "actions/checkout@v4" },
+        {
+          name: "Setup Node.js",
+          uses: "actions/setup-node@v4",
+          with: { "node-version": NODE_VERSION },
+        },
+        { name: "Audit dependencies", run: "npm audit --audit-level=high" },
       ],
     });
   }
@@ -1137,6 +1176,9 @@ const renderReadme = (name: string): string =>
     "",
     "`.github/workflows/build.yml` runs the same `build` task on every pull",
     "request and on pushes to `main`, so CI and your machine cannot disagree.",
+    "A parallel `audit` job runs `npm audit --audit-level=high` against the",
+    "committed lockfile — a high-severity advisory blocks the pull request,",
+    "anything lower merely reports.",
     "",
     "If `build` changes any generated file, the run fails — that means the",
     "committed output is stale and `npx projen` was not run. A second job,",

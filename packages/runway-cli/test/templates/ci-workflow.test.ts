@@ -116,6 +116,17 @@ describe("ci workflow", () => {
     expect(Object.keys(workflow.jobs)).toContain("self-mutation");
   });
 
+  it("audits dependencies in its own job, from the lockfile alone", () => {
+    const steps = (workflow.jobs.audit.steps ?? []).map(describeStep);
+
+    expect(steps.at(-1)).toBe("npm audit --audit-level=high");
+    // No install and no registry auth: the advisory query goes to the default
+    // registry, never the @runway scope's, so the job holds no credential and
+    // runs on fork PRs. An `npm ci` appearing here means that changed.
+    expect(steps.join("\n")).not.toContain("npm ci");
+    expect(steps.join("\n")).not.toContain("google-github-actions/auth");
+  });
+
   it("uses no package-manager setup action — npm needs none", () => {
     const steps = (workflow.jobs.build.steps ?? []).map(describeStep).join(" ");
     expect(steps).not.toContain("pnpm/action-setup");
