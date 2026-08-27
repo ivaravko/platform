@@ -6,13 +6,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { RunwayServiceProject } from "../../src";
 
 /**
- * Task 4: the scaffold emits one CI workflow and nothing else.
+ * Task 4: the scaffold's .github/ holds an allowlist, not whatever projen adds.
  *
  * projen's TypeScriptProject would otherwise add a release workflow, a
- * dependency-upgrade workflow, a PR linter, a mergify config and a PR template.
- * Every one is noise against the module's minimality constraint, so "exactly
- * one file under .github/" is asserted rather than reviewed — it fails loudly
- * when a projen upgrade introduces a new default.
+ * dependency-upgrade workflow, a PR linter and a mergify config. Of its
+ * defaults only the PR template and dependabot are kept; the rest is noise
+ * against the module's minimality constraint, so the exact contents of
+ * .github/ are asserted rather than reviewed — it fails loudly when a projen
+ * upgrade introduces a new default.
  *
  * The workflow is parsed rather than string-matched, so a malformed file fails
  * here instead of on the user's first pull request.
@@ -58,10 +59,28 @@ describe("ci workflow", () => {
     ]);
   });
 
-  it("adds no release, upgrade, PR-lint, mergify or PR-template files", () => {
-    const dotGithub = readdirSync(join(outdir, ".github"));
-    expect(dotGithub).toEqual(["workflows"]);
+  it("adds only dependabot and a PR template beside the workflows", () => {
+    const dotGithub = readdirSync(join(outdir, ".github")).toSorted();
+    expect(dotGithub).toEqual([
+      "dependabot.yml",
+      "pull_request_template.md",
+      "workflows",
+    ]);
     expect(readdirSync(outdir)).not.toContain(".mergify.yml");
+  });
+
+  it("keeps dependabot away from the pinned and private scopes", () => {
+    const dependabot = parse(
+      readFileSync(join(outdir, ".github/dependabot.yml"), "utf-8"),
+    ) as { updates: { ignore?: { "dependency-name": string }[] }[] };
+
+    const ignored = (dependabot.updates[0].ignore ?? []).map(
+      (entry) => entry["dependency-name"],
+    );
+    // @pulumi/* is pinned exactly as a verified combination; @runway/* lives
+    // in an authenticated registry dependabot cannot resolve.
+    expect(ignored).toContain("@pulumi/*");
+    expect(ignored).toContain("@runway/*");
   });
 
   it("runs on pull requests, pushes to main, and on demand", () => {

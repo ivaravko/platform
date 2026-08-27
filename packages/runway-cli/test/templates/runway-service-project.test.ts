@@ -149,8 +149,10 @@ describe("scaffold file tree", () => {
       // into the image the Dockerfile builds.
       ".dockerignore",
       ".gitattributes",
-      // The PR gate, and the only file projen's GitHub integration is allowed
-      // to add; the upgrade, PR-lint, mergify and PR-template defaults are off.
+      // Weekly version PRs; @pulumi/* and @runway/* are ignored deliberately.
+      ".github/dependabot.yml",
+      ".github/pull_request_template.md",
+      // The PR gate. The upgrade, PR-lint and mergify defaults stay off.
       ".github/workflows/build.yml",
       // The only route to production: a tag push, or a dispatch on a tag ref.
       ".github/workflows/release.yml",

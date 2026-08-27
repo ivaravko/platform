@@ -223,15 +223,38 @@ export class RunwayServiceProject extends typescript.TypeScriptProject {
       // One workflow, running the repo's own `build` task — which chains
       // compile, test and lint, so a single job gates all three.
       //
-      // Everything else projen would add is switched off deliberately. Left on,
-      // a TypeScriptProject also emits a release workflow, a dependency-upgrade
-      // workflow, a PR linter, a mergify config and a PR template: five files
-      // nobody asked for, in a scaffold whose whole premise is that every
-      // generated line is one someone must read.
+      // Of projen's other GitHub defaults, two are kept: a PR template and
+      // dependabot. Release, PR-lint and mergify stay off — noise against the
+      // minimality constraint — and depsUpgrade stays off because dependabot
+      // replaces it (projen refuses to enable both).
       github: true,
       githubOptions: { mergify: false, pullRequestLint: false },
-      pullRequestTemplate: false,
+      pullRequestTemplate: true,
+      pullRequestTemplateContents: [
+        "## What changed",
+        "",
+        "## Why",
+        "",
+        "## How it was verified",
+        "",
+        "<!-- Edits to generated files belong in .projenrc.ts; run `npx projen`. -->",
+      ],
+      // Dependabot rather than projen's own upgrade workflow: version PRs come
+      // from GitHub itself, with no extra workflow file to read or maintain.
+      // Two scopes are ignored deliberately: @pulumi/* is pinned exactly as a
+      // verified combination (a solo bump would break the match with
+      // gcp-components' peer ranges), and @runway/* lives in an authenticated
+      // registry dependabot cannot resolve without credentials it has no
+      // business holding.
       depsUpgrade: false,
+      dependabot: true,
+      dependabotOptions: {
+        scheduleInterval: github.DependabotScheduleInterval.WEEKLY,
+        ignore: [
+          { dependencyName: "@pulumi/*" },
+          { dependencyName: "@runway/*" },
+        ],
+      },
       release: false,
 
       workflowNodeVersion: NODE_VERSION,
