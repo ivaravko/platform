@@ -1,6 +1,6 @@
 # Tasks: environment-provisioning
 
-Nine tasks, three checkpoints. Rationale, dependency graph and risks: [tasks/plan.md](plan.md).
+Nine tasks, three checkpoints. Rationale, dependency graph and risks: [tasks/environment-provisioning-plan.md](environment-provisioning-plan.md).
 Completed history: [tasks/completed-v1.md](completed-v1.md).
 
 - **Phase E — The boundary** (E1–E5): the permission set, the audit that refuses, and
@@ -148,7 +148,7 @@ Where the boundary actually exists. Composes E2's audit and E4's federation.
 - [ ] All seven EP controls hold, each with a named test and a mapping row
 - [ ] Every negative assertion is failure-injected — no absence asserted without injected presence
 - [ ] The completeness test passes bidirectionally with `EP-` included
-- [ ] **Answer [plan OQ2](plan.md#open-questions)** — whether `runway bootstrap` may write IAM, and
+- [ ] **Answer [plan OQ2](environment-provisioning-plan.md#open-questions)** — whether `runway bootstrap` may write IAM, and
       to which projects — before E7 runs anything
 - [ ] Human review
 
@@ -193,9 +193,9 @@ possess still cannot deploy to production.** Until this runs, that is a design, 
       in the spec's Verification status, not assumed
 
 **Stop conditions**
-- [x] **Gated on [plan OQ2](plan.md#open-questions).** This writes IAM to a real project. Do not run
+- [x] **Gated on [plan OQ2](environment-provisioning-plan.md#open-questions).** This writes IAM to a real project. Do not run
       it on unstated authorization
-- [x] If no project can serve as a clean production target ([plan OQ1](plan.md#open-questions)),
+- [x] If no project can serve as a clean production target ([plan OQ1](environment-provisioning-plan.md#open-questions)),
       **stop and report** — verify the refusal path and say plainly that the acceptance path is
       unverified. Do not weaken EP-06 to manufacture a passing test
 
@@ -218,7 +218,7 @@ possess still cannot deploy to production.** Until this runs, that is a design, 
 - [ ] Staging bootstraps, and its grants read back correctly from GCP
 - [ ] Anything unverified is stated plainly rather than implied by silence
 - [ ] Everything granted during the run has been revoked, and that is confirmed
-- [ ] **Resolve [plan OQ3](plan.md#open-questions)** — `service-stacks`' three open questions —
+- [ ] **Resolve [plan OQ3](environment-provisioning-plan.md#open-questions)** — `service-stacks`' three open questions —
       before its plan is written
 - [ ] Human review
 
@@ -277,5 +277,5 @@ adds a third package, and publishing freezes all three.
 - [ ] All seven EP controls: default, test, mapping row, and failure injection
 - [ ] Nothing outstanding from earlier plans — T-series and D-series both closed
 - [ ] **Decide what `release-path` needs**, since it has no spec and is what makes this boundary
-      usable ([plan OQ4](plan.md#open-questions))
+      usable ([plan OQ4](environment-provisioning-plan.md#open-questions))
 - [ ] Human review

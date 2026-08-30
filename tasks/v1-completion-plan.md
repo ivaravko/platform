@@ -1,9 +1,11 @@
 # Implementation Plan: v1 completion — the paved road actually deploys
 
-Active plan. Follows [tasks/gcp-components-plan.md](gcp-components-plan.md) (C1–C8, complete) and
+**Complete — closed 2026-08-30.** D1–D6 landed here; D7 was carried into
+[environment-provisioning](environment-provisioning-todo.md) as E9 and completed there.
+Follows [tasks/gcp-components-plan.md](gcp-components-plan.md) (C1–C8, complete) and
 [tasks/runway-cli-prototype-plan.md](runway-cli-prototype-plan.md) (Tasks 1–5, complete).
 
-Tasks: [tasks/todo.md](todo.md), numbered `D1`–`D7`. Completed history:
+Tasks: `D1`–`D7`, recorded in the completed history:
 [tasks/completed-v1.md](completed-v1.md).
 
 ## Overview

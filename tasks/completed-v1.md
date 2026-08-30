@@ -2,7 +2,7 @@
 
 **Archive.** Every task below is done. Kept for the findings recorded under each one — several are
 load-bearing (the projen npm-workspaces gap, the Pulumi/TS 7 constraints, three tests that passed
-while proving nothing). The active plan is [tasks/gcp-components-plan.md](gcp-components-plan.md) and the active list is
+while proving nothing). The active plan is [tasks/plan.md](plan.md) and the active list is
 [tasks/todo.md](todo.md).
 
 The unchecked boxes that remain are all *checkpoint review* items, not outstanding work.

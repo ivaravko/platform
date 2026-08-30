@@ -1,14 +1,15 @@
 # Implementation Plan: gcp-components — SecureContainerService
 
-Active plan. Implements [SPEC-secure-container-service.md](../SPEC-secure-container-service.md),
+**Complete — closed 2026-08-30.** C1–C8 all landed; history in [completed-v1.md](completed-v1.md).
+Implemented [SPEC-secure-container-service.md](../SPEC-secure-container-service.md),
 the first component of module `gcp-components` in the
 [Platform capability map](../SPEC.md#capability-map).
 
-Tasks: [tasks/todo.md](todo.md), numbered `C1`–`C8`.
+Tasks: [tasks/completed-v1.md](completed-v1.md#tasks-gcp-components--securecontainerservice), numbered `C1`–`C8`.
 
 **The runway-cli prototype is deferred, not dropped.** Its plan is preserved verbatim at
 [tasks/runway-cli-prototype-plan.md](runway-cli-prototype-plan.md) and its remaining tasks (2–5)
-sit under "Deferred" in [todo.md](todo.md). Component tasks use a `C` prefix precisely so that plan
+sit under "Deferred" in [completed-v1.md](completed-v1.md#active-parallel-stream-runway-cli). Component tasks use a `C` prefix precisely so that plan
 keeps its numbering and its cross-references stay valid.
 
 ## Overview

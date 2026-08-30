@@ -1,5 +1,8 @@
 # Implementation Plan: runway-cli prototype
 
+**Complete — closed 2026-08-30.** Tasks 1–5 all landed; history in
+[completed-v1.md](completed-v1.md#active-parallel-stream-runway-cli).
+
 Scope cut to a **minimal prototype of the CLI only**. Everything else in
 [SPEC.md](../SPEC.md) — the `gcp-components` module, the policy pack, generated infra, Docker,
 and `runway doctor` — is out of scope and unplanned. The full-scope plan is parked in
@@ -10,7 +13,8 @@ and `runway doctor` — is out of scope and unplanned. The full-scope plan is pa
 
 Tasks: [tasks/todo.md](completed-v1.md#active-parallel-stream-runway-cli) — under "Deferred".
 
-**Deferred, not dropped.** The active plan is [tasks/plan.md](plan.md) (gcp-components).
+**Deferred, not dropped** — as it stood then; the plan that superseded it was
+[gcp-components-plan.md](gcp-components-plan.md), and the active plan today is [tasks/plan.md](plan.md).
 
 ## Objective
 

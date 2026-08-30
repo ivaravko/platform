@@ -1,11 +1,13 @@
 # Implementation Plan: environment-provisioning — the identity boundary
 
-Active plan. Next module in the [capability map](../SPEC.md#capability-map) build order, and the
-first one whose whole purpose is to make something **impossible** rather than easy.
+**Complete — closed 2026-08-30.** E1–E9 landed; E7's real-GCP half was partly descoped, then
+reversed by the v1 close-out's [P4](todo.md). It was the next module in the
+[capability map](../SPEC.md#capability-map) build order, and the first one whose whole purpose is
+to make something **impossible** rather than easy.
 
-Tasks: [tasks/todo.md](todo.md), numbered `E1`–`E9`. Preceding plans:
-[v1-completion](v1-completion-plan.md) (D1–D6 complete, D7 outstanding),
-[integration-tests](integration-tests-plan.md) (T1–T10 complete, T11–T12 outstanding),
+Tasks: [tasks/environment-provisioning-todo.md](environment-provisioning-todo.md), numbered
+`E1`–`E9`. Preceding plans: [v1-completion](v1-completion-plan.md) (D1–D7 complete — D7 landed
+here as E9), [integration-tests](integration-tests-plan.md) (T1–T12 complete),
 [gcp-components](gcp-components-plan.md), [runway-cli](runway-cli-prototype-plan.md).
 Task history: [tasks/completed-v1.md](completed-v1.md).
 

@@ -1,11 +1,12 @@
 # Implementation Plan: integration-tests
 
+**Complete — closed 2026-08-30.** T1–T12 all landed; the last two on 2026-08-26.
 Implements [SPEC-integration-tests.md](../SPEC-integration-tests.md).
 
 **This file is the task-list target for this tier**, not `tasks/todo.md`. The tier cuts across
 `gcp-components` and `runway-cli` rather than sitting in the capability map's build order
 (`gcp-components → runway-cli → environment-provisioning → service-stacks → release-path`), so
-threading it into the v1 completion plan in [tasks/plan.md](plan.md) would interleave it with work
+threading it into the v1 completion plan in [v1-completion-plan.md](v1-completion-plan.md) would interleave it with work
 it neither blocks nor depends on.
 
 ## Overview
