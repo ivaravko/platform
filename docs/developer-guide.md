@@ -115,5 +115,6 @@ are most likely to meet:
   never a `user:` principal — joining the team is a group membership change, and offboarding is a
   group removal rather than IAM archaeology.
 
-A worked example of all of this, end to end — scaffolded, provisioned, CI pushing images by
-federation, deployed to staging — is [ivaravko/first01](https://github.com/ivaravko/first01).
+All of this has been run end to end — scaffolded, provisioned, CI pushing images by federation,
+deployed to staging, then promoted to production from a tag. No example repository is published;
+the verified claims and their limits are in [SPEC-release-path.md](../SPEC-release-path.md).
