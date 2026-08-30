@@ -478,6 +478,12 @@ it writes nothing and grants nothing.
   developer flow, and the running service's audit trail names the person (RP-04). EP-07 reported
   the service incomplete on every run, correctly: production was never adopted.
 
+  **That environment no longer exists** (2026-08-30): both projects were deleted at the operator's
+  request, along with the service repository. The reading above stands as what was observed on
+  2026-08-26 — it is not weakened retroactively — but nothing can be re-read from Google now, and
+  EP-05's real-GCP evidence is gone with the state bucket it was read from. The next service's
+  bootstrap re-establishes it.
+
 **Deliberately unverified, and by whose decision:**
 - **The production acceptance path.** Staging's write authorization was granted and used
   (2026-08-26, superseding OQ2's preview-only for that scope), but production was skipped by
