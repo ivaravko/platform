@@ -130,6 +130,19 @@ than from our own state:
 | The human denial (`pulumi up --stack production` → 403) | **Partially observed.** The human's read-only `gcloud run services list` on production is already denied (`run.services.list`); the full deploy-attempt denial is run by the operator and recorded when pasted back |
 | No user-managed keys (criterion 4) | **Pending the operator.** The granular admin set cannot even list keys (`iam.serviceAccountKeys.list` denied) — itself evidence of its tightness; the observed empty listing needs a self-granted `serviceAccountKeyAdmin` |
 
+**The evidence behind this table has since been deleted** (2026-08-30). The `ivaravko/first01`
+repository was removed at the operator's request, and its Actions run logs went with it — every run
+record cited above and in the two paragraphs before it. The verdicts stand as what was observed on
+2026-08-26 and are not weakened retroactively; what is gone is the ability to corroborate them.
+Anyone re-checking these claims must scaffold a new service and repeat the cutover. The GCP
+projects themselves (`first01-staging`, `first01-production`) were not deleted.
+
+**This also closes the two rows above that read as pending.** The deploy-attempt 403 needed the
+deleted repository's `infra/` program and state, so it cannot now be run for this service; the key
+listing still could be, against the surviving project, but proving it on a service whose repository
+is gone buys little. Both are **unverified for v1** and carried to the next service's cutover —
+stated here rather than left looking imminent.
+
 **Two gaps the first production cutover surfaced, both fixed the same day.** (1) The repository
 variables are shared by `build.yml` and `release.yml`, so the cutover moves image pushes to the
 production deployer — which held nothing on the staging registry where images live.

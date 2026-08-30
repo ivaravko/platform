@@ -37,9 +37,11 @@ runway doctor      # what this machine is missing, before npm tells you cryptica
 project ids. `.projenrc.ts` is the only generated file meant to be hand-edited; `npx projen`
 regenerates the rest.
 
-A complete service produced by this flow, end to end:
-[ivaravko/first01](https://github.com/ivaravko/first01) — scaffolded, provisioned, CI building and
-pushing its images by federation, and deployed to staging.
+This flow was exercised end to end on a real service (`first01`, 2026-08-26) — scaffolded,
+provisioned, CI building and pushing its images by federation, deployed to staging, then promoted
+to production from a pushed tag. **That repository was deleted on 2026-08-30**, so there is no live
+example to inspect and its CI run logs are gone with it; what those runs proved is recorded in
+[SPEC-release-path.md](SPEC-release-path.md#promotion-resolves-a-tag-to-a-digest).
 
 Day-to-day life inside the generated repository — the dev loop, the PR gate, deploying staging
 yourself, and why production 403s you — is [docs/developer-guide.md](docs/developer-guide.md).
